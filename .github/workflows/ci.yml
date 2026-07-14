@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run self-tests
+        run: swift run QuotaBlocks --self-test
+      - name: Build app bundle
+        run: ./scripts/build-app.sh
+      - name: Verify bundle
+        run: |
+          plutil -lint "dist/Quota Blocks.app/Contents/Info.plist"
+          codesign --verify --deep --strict "dist/Quota Blocks.app"
