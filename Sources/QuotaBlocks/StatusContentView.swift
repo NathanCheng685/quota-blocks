@@ -1,6 +1,13 @@
 import AppKit
 
 final class StatusContentView: NSView {
+    private static let valueX: CGFloat = 51
+    private static let outerPadding: CGFloat = 1
+    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
+    private static let minimumValueWidth = ("88%" as NSString).size(
+        withAttributes: [.font: valueFont]
+    ).width
+
     private var chatGPTState: QuotaState = .loading
     private var claudeState: QuotaState = .loading
 
@@ -14,6 +21,14 @@ final class StatusContentView: NSView {
         chatGPTState = chatGPT
         claudeState = claude
         needsDisplay = true
+    }
+
+    static func preferredWidth(chatGPT: QuotaState, claude: QuotaState) -> CGFloat {
+        let widestValue = [chatGPT, claude]
+            .map(valueText)
+            .map { ($0 as NSString).size(withAttributes: [.font: valueFont]).width }
+            .max() ?? minimumValueWidth
+        return ceil(valueX + max(minimumValueWidth, widestValue) + outerPadding)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -53,19 +68,26 @@ final class StatusContentView: NSView {
             path.fill()
         }
 
-        let value: String
-        switch state {
-        case .loading: value = "···"
-        case .available(let snapshot): value = "\(snapshot.remainingPercent)%"
-        case .unavailable: value = "—"
-        }
-
+        let value = Self.valueText(state)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold),
+            .font: Self.valueFont,
             .foregroundColor: NSColor.labelColor,
         ]
-        let valueRect = NSRect(x: 49, y: y, width: 28, height: 11)
+        let valueRect = NSRect(
+            x: Self.valueX,
+            y: y,
+            width: max(0, bounds.width - Self.valueX - Self.outerPadding),
+            height: 11
+        )
         value.draw(in: valueRect, withAttributes: attributes)
+    }
+
+    private static func valueText(_ state: QuotaState) -> String {
+        switch state {
+        case .loading: "···"
+        case let .available(snapshot): "\(snapshot.remainingPercent)%"
+        case .unavailable: "—"
+        }
     }
 
     private func drawIcon(provider: QuotaProvider, rect: NSRect) {

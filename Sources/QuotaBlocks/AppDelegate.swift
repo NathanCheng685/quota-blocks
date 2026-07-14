@@ -6,8 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case english
     }
 
-    private let statusItem = NSStatusBar.system.statusItem(withLength: 78)
-    private let contentView = StatusContentView(frame: NSRect(x: 0, y: 0, width: 78, height: 22))
+    private let statusItem = NSStatusBar.system.statusItem(withLength: 73)
+    private let contentView = StatusContentView(frame: NSRect(x: 0, y: 0, width: 73, height: 22))
     private var chatGPTState: QuotaState = .loading
     private var claudeState: QuotaState = .loading
     private var refreshTimer: Timer?
@@ -59,6 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chatGPTState = state(from: chatGPT)
             claudeState = state(from: claude)
             contentView.update(chatGPT: chatGPTState, claude: claudeState)
+            statusItem.length = StatusContentView.preferredWidth(
+                chatGPT: chatGPTState,
+                claude: claudeState
+            )
             isRefreshing = false
             rebuildMenu()
         }
