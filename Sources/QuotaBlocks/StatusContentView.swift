@@ -64,7 +64,7 @@ final class StatusContentView: NSView {
             .font: NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold),
             .foregroundColor: NSColor.labelColor,
         ]
-        let valueRect = NSRect(x: 50, y: y, width: 30, height: 11)
+        let valueRect = NSRect(x: 49, y: y, width: 28, height: 11)
         value.draw(in: valueRect, withAttributes: attributes)
     }
 

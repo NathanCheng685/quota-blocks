@@ -6,8 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case english
     }
 
-    private let statusItem = NSStatusBar.system.statusItem(withLength: 82)
-    private let contentView = StatusContentView(frame: NSRect(x: 0, y: 0, width: 82, height: 22))
+    private let statusItem = NSStatusBar.system.statusItem(withLength: 78)
+    private let contentView = StatusContentView(frame: NSRect(x: 0, y: 0, width: 78, height: 22))
     private var chatGPTState: QuotaState = .loading
     private var claudeState: QuotaState = .loading
     private var refreshTimer: Timer?
