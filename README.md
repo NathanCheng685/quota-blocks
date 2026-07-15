@@ -2,14 +2,14 @@
 
 A compact, native macOS menu bar app for seeing your remaining ChatGPT/Codex and Claude subscription quotas at a glance.
 
-The menu bar item uses two compact rows and automatically adjusts between roughly 73–78 pt wide so percentages are never compressed. Each row contains a provider icon, five small blocks, and the remaining weekly percentage. Click it for full reset dates and Claude’s 5-hour, weekly, and Fable limits. The menu can switch between English and Chinese.
+The menu bar item uses two compact rows and automatically adjusts between roughly 73–78 pt wide so percentages are never compressed. Each row contains a provider icon, five small blocks, and the remaining weekly percentage. Click it for reset dates with weekdays and Claude’s 5-hour, weekly, and Fable limits. The menu can switch between English and Chinese and control whether Quota Blocks launches at login.
 
 > Quota Blocks is an independent, unofficial open-source project. It is not affiliated with, endorsed by, or sponsored by OpenAI or Anthropic.
 
 ## What it reads
 
 - **ChatGPT/Codex:** the seven-day rate-limit window exposed by the locally installed ChatGPT or Codex app server.
-- **Claude:** the local Claude Code OAuth session and Anthropic’s usage endpoint, including the 5-hour session, weekly all-models limit, and Fable limit when present.
+- **Claude:** the local Claude Code OAuth session from macOS Keychain (with the legacy credentials file as a fallback) and Anthropic’s usage endpoint, including the 5-hour session, weekly all-models limit, and Fable limit when present.
 - Percentages always mean **remaining quota**, not used quota.
 - Credentials stay on the Mac and are never included in the app bundle or repository. See [PRIVACY.md](PRIVACY.md).
 
@@ -47,7 +47,7 @@ swift run QuotaBlocks --self-test
 
 Quota Blocks 是一个原生 macOS 菜单栏小应用，用两行紧凑信息同时显示 ChatGPT／Codex 与 Claude 的剩余额度。
 
-每行包含服务图标、5 个小额度块和周剩余百分比。点击后可查看完整重置日期，以及 Claude 的 5 小时、周额度和 Fable 限额；菜单支持中英文切换。
+每行包含服务图标、5 个小额度块和周剩余百分比。点击后可查看包含星期的完整重置日期，以及 Claude 的 5 小时、周额度和 Fable 限额；菜单支持中英文切换和开机自动启动开关。
 
 安装前请先登录 ChatGPT／Codex 与 Claude Code，然后运行：
 
@@ -55,7 +55,7 @@ Quota Blocks 是一个原生 macOS 菜单栏小应用，用两行紧凑信息同
 ./scripts/install-local.sh
 ```
 
-应用每 2 分钟自动刷新。它不会重置额度，也没有“立即刷新／重置”按钮。
+应用每 2 分钟自动刷新，并在首次运行后默认开机自动启动。它不会重置额度，也没有“立即刷新／重置”按钮。
 
 ## Attribution
 

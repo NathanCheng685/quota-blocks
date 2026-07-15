@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum AppLanguage: String {
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        configureLaunchAtLogin()
         configureStatusItem()
         rebuildMenu()
         refresh()
@@ -89,6 +91,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         languageItem.target = self
         menu.addItem(languageItem)
 
+        let launchAtLoginItem = NSMenuItem(
+            title: launchAtLoginTitle,
+            action: #selector(toggleLaunchAtLogin),
+            keyEquivalent: ""
+        )
+        launchAtLoginItem.target = self
+        launchAtLoginItem.state = launchAtLoginState
+        menu.addItem(launchAtLoginItem)
+
         let openChatGPT = NSMenuItem(title: text("打开 ChatGPT 额度页面", "Open ChatGPT usage"), action: #selector(openChatGPTUsage), keyEquivalent: "")
         openChatGPT.target = self
         menu.addItem(openChatGPT)
@@ -148,12 +159,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func formatResetDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = language == .chinese ? Locale(identifier: "zh_CN") : Locale(identifier: "en_US")
-        formatter.dateFormat = language == .chinese ? "M月d日 E HH:mm" : "MMM d, h:mm a"
+        formatter.dateFormat = language == .chinese ? "M月d日 E HH:mm" : "EEE, MMM d, h:mm a"
         return formatter.string(from: date)
     }
 
     private func updateToolTip() {
         statusItem.button?.toolTip = text("ChatGPT 与 Claude 周额度", "ChatGPT and Claude weekly quotas")
+    }
+
+    private var launchAtLoginTitle: String {
+        if SMAppService.mainApp.status == .requiresApproval {
+            return text("开机自动启动（需要系统允许）", "Launch at Login (approval required)")
+        }
+        return text("开机自动启动", "Launch at Login")
+    }
+
+    private var launchAtLoginState: NSControl.StateValue {
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            return .on
+        case .requiresApproval:
+            return .mixed
+        default:
+            return .off
+        }
+    }
+
+    private func configureLaunchAtLogin() {
+        let defaults = UserDefaults.standard
+        let key = "launchAtLoginRequested"
+        if defaults.object(forKey: key) == nil {
+            defaults.set(true, forKey: key)
+        }
+        guard defaults.bool(forKey: key) else {
+            return
+        }
+        switch SMAppService.mainApp.status {
+        case .notRegistered, .notFound:
+            try? SMAppService.mainApp.register()
+        default:
+            break
+        }
     }
 
     private func state(from result: Result<QuotaSnapshot, Error>) -> QuotaState {
@@ -175,6 +221,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         language = language == .chinese ? .english : .chinese
         UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
         updateToolTip()
+        rebuildMenu()
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        let defaults = UserDefaults.standard
+
+        switch service.status {
+        case .enabled, .requiresApproval:
+            do {
+                try service.unregister()
+                defaults.set(false, forKey: "launchAtLoginRequested")
+            } catch {
+                NSSound.beep()
+            }
+        case .notRegistered, .notFound:
+            do {
+                try service.register()
+                defaults.set(true, forKey: "launchAtLoginRequested")
+            } catch {
+                NSSound.beep()
+            }
+        @unknown default:
+            NSSound.beep()
+        }
         rebuildMenu()
     }
 

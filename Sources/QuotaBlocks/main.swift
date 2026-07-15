@@ -1,4 +1,18 @@
 import AppKit
+import ServiceManagement
+
+if CommandLine.arguments.contains("--launch-at-login-status") {
+    let status: String
+    switch SMAppService.mainApp.status {
+    case .notRegistered: status = "not registered"
+    case .enabled: status = "enabled"
+    case .requiresApproval: status = "requires approval"
+    case .notFound: status = "not found"
+    @unknown default: status = "unknown"
+    }
+    print("Launch at login: \(status)")
+    exit(EXIT_SUCCESS)
+}
 
 if CommandLine.arguments.contains("--self-test") {
     do {

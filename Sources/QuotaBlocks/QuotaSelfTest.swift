@@ -21,6 +21,28 @@ enum QuotaSelfTest {
         try expect(claude.session?.remainingPercent == 67, "Claude session remaining percentage")
         try expect(claude.fable?.remainingPercent == 13, "Claude Fable remaining percentage")
 
+        let refreshJSON = #"{"access_token":"new-access","refresh_token":"new-refresh","expires_in":28800}"#
+        let refresh = try ClaudeOAuthRefreshPayload(data: Data(refreshJSON.utf8))
+        try expect(refresh.accessToken == "new-access", "Claude refreshed access token")
+        try expect(refresh.refreshToken == "new-refresh", "Claude refreshed refresh token")
+        try expect(refresh.expiresIn == 28_800, "Claude refreshed expiry")
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        try expect(
+            ClaudeCredentialStore.needsRefresh(
+                expiresAtMilliseconds: 1_030_000,
+                now: now
+            ),
+            "Claude refresh leeway"
+        )
+        try expect(
+            !ClaudeCredentialStore.needsRefresh(
+                expiresAtMilliseconds: 1_120_000,
+                now: now
+            ),
+            "Claude valid token"
+        )
+
         try expect(
             QuotaSnapshot(provider: .chatGPT, usedPercent: 100, resetsAt: nil).filledBlockCount == 0,
             "Empty block boundary"
