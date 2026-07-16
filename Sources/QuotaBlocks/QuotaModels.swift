@@ -80,4 +80,13 @@ enum QuotaError: LocalizedError {
             message
         }
     }
+
+    var isTemporary: Bool {
+        switch self {
+        case .invalidResponse, .requestFailed:
+            true
+        case .executableMissing, .notSignedIn:
+            false
+        }
+    }
 }

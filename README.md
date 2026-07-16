@@ -9,7 +9,7 @@ The menu bar item uses two compact rows and automatically adjusts between roughl
 ## What it reads
 
 - **ChatGPT/Codex:** the seven-day rate-limit window exposed by the locally installed ChatGPT or Codex app server.
-- **Claude:** the local Claude Code OAuth session from macOS Keychain (with the legacy credentials file as a fallback) and Anthropic’s usage endpoint, including the 5-hour session, weekly all-models limit, and Fable limit when present.
+- **Claude:** the local Claude Code OAuth session from macOS Keychain (with the legacy credentials file as a fallback) and Anthropic’s usage endpoint, including the 5-hour session, weekly all-models limit, and Fable limit when present. Quota Blocks treats these credentials as read-only; Claude Code remains responsible for login and token refresh.
 - Percentages always mean **remaining quota**, not used quota.
 - Credentials stay on the Mac and are never included in the app bundle or repository. See [PRIVACY.md](PRIVACY.md).
 

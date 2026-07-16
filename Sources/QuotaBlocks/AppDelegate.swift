@@ -58,8 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             async let claudeResult = capture { try await ClaudeQuotaService.fetch() }
             let (chatGPT, claude) = await (chatGPTResult, claudeResult)
 
-            chatGPTState = state(from: chatGPT)
-            claudeState = state(from: claude)
+            chatGPTState = state(from: chatGPT, keeping: chatGPTState)
+            claudeState = state(from: claude, keeping: claudeState)
             contentView.update(chatGPT: chatGPTState, claude: claudeState)
             statusItem.length = StatusContentView.preferredWidth(
                 chatGPT: chatGPTState,
@@ -202,10 +202,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func state(from result: Result<QuotaSnapshot, Error>) -> QuotaState {
+    private func state(
+        from result: Result<QuotaSnapshot, Error>,
+        keeping previousState: QuotaState
+    ) -> QuotaState {
         switch result {
-        case let .success(snapshot): .available(snapshot)
-        case let .failure(error): .unavailable(error.localizedDescription)
+        case let .success(snapshot):
+            return .available(snapshot)
+        case let .failure(error):
+            if case .available = previousState,
+               let quotaError = error as? QuotaError,
+               quotaError.isTemporary
+            {
+                return previousState
+            }
+            return .unavailable(error.localizedDescription)
         }
     }
 

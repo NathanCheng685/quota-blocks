@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Read current Claude Code OAuth credentials from macOS Keychain and refresh expired sessions automatically.
+- Read current Claude Code OAuth credentials from macOS Keychain without refreshing or rewriting Claude Code’s rotating tokens.
+- Keep the last known quota on temporary network failures while surfacing signed-out states immediately.
 - Added weekdays to English reset dates.
 - Added launch-at-login by default with a bilingual menu toggle.
 
