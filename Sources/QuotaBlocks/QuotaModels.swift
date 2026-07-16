@@ -65,6 +65,7 @@ enum QuotaState: Sendable, Equatable {
 enum QuotaError: LocalizedError {
     case executableMissing
     case notSignedIn(String)
+    case credentialsExpired(String)
     case invalidResponse(String)
     case requestFailed(String)
 
@@ -74,6 +75,8 @@ enum QuotaError: LocalizedError {
             "未找到 ChatGPT/Codex，请先安装 ChatGPT 应用。"
         case let .notSignedIn(provider):
             "\(provider) 未登录，请先打开对应应用完成登录。"
+        case let .credentialsExpired(provider):
+            "\(provider) 登录凭据已过期，使用一次 \(provider) Code 后会自动恢复。"
         case let .invalidResponse(provider):
             "\(provider) 暂时没有返回周额度。"
         case let .requestFailed(message):
@@ -85,7 +88,7 @@ enum QuotaError: LocalizedError {
         switch self {
         case .invalidResponse, .requestFailed:
             true
-        case .executableMissing, .notSignedIn:
+        case .executableMissing, .notSignedIn, .credentialsExpired:
             false
         }
     }

@@ -27,6 +27,10 @@ enum ClaudeQuotaService {
         }
     }
 
+    static func credentialDiagnostics() async -> String {
+        await credentialStore.diagnostics()
+    }
+
     private static func fetchUsage(with token: String) async throws -> QuotaSnapshot {
         var request = URLRequest(url: usageURL)
         request.httpMethod = "GET"
@@ -58,99 +62,183 @@ private enum ClaudeRequestError: Error {
 }
 
 actor ClaudeCredentialStore {
-    private struct Credentials {
+    struct Credentials: Equatable {
         let accessToken: String
         let expiresAtMilliseconds: TimeInterval?
     }
 
-    private static let refreshLeeway: TimeInterval = 60
+    struct SourceReport {
+        let name: String
+        let detail: String
+        let credentials: Credentials?
+    }
+
+    static let refreshLeeway: TimeInterval = 60
+    private static let keychainService = "Claude Code-credentials"
 
     func accessToken(
         rejectedToken: String? = nil
     ) async throws -> String {
-        let credentials = try readCredentials()
-        if let rejectedToken, credentials.accessToken == rejectedToken {
+        var sources = loadSources()
+        if let token = Self.usableToken(
+            from: sources.compactMap(\.credentials),
+            rejectedToken: rejectedToken,
+            now: Date()
+        ) {
+            return token
+        }
+        guard sources.contains(where: { $0.credentials != nil }) else {
             throw QuotaError.notSignedIn("Claude")
         }
-        guard !Self.needsRefresh(
-            expiresAtMilliseconds: credentials.expiresAtMilliseconds
-        ) else {
-            throw QuotaError.notSignedIn("Claude")
+
+        // The stored access token is expired (or the server just rejected
+        // it). Only Claude Code may refresh the shared rotating credentials,
+        // so ask it to refresh itself and re-read whatever it wrote back.
+        _ = await ClaudeCodeRefreshTrigger.shared.requestRefresh()
+
+        sources = loadSources()
+        let candidates = sources.compactMap(\.credentials)
+        if let token = Self.usableToken(
+            from: candidates,
+            rejectedToken: rejectedToken,
+            now: Date()
+        ) {
+            return token
         }
-        return credentials.accessToken
+        // Accept a token inside the expiry leeway as a last resort; the
+        // usage request will still surface a real server-side rejection.
+        if let token = Self.usableToken(
+            from: candidates,
+            rejectedToken: rejectedToken,
+            now: Date(),
+            leeway: 0
+        ) {
+            return token
+        }
+        guard candidates.isEmpty else {
+            throw QuotaError.credentialsExpired("Claude")
+        }
+        throw QuotaError.notSignedIn("Claude")
+    }
+
+    func diagnostics() -> String {
+        let sources = loadSources()
+        var lines = ["Claude credential diagnostics:"]
+        for source in sources {
+            lines.append("- \(source.name): \(source.detail)")
+        }
+        let token = Self.usableToken(
+            from: sources.compactMap(\.credentials),
+            rejectedToken: nil,
+            now: Date()
+        )
+        lines.append("- usable access token: \(token == nil ? "no" : "yes")")
+        let binary = ClaudeCodeRefreshTrigger.locateClaudeBinary()
+        lines.append("- claude CLI: \(binary?.path ?? "not found")")
+        return lines.joined(separator: "\n")
+    }
+
+    static func usableToken(
+        from candidates: [Credentials],
+        rejectedToken: String?,
+        now: Date,
+        leeway: TimeInterval = ClaudeCredentialStore.refreshLeeway
+    ) -> String? {
+        candidates
+            .filter {
+                !needsRefresh(
+                    expiresAtMilliseconds: $0.expiresAtMilliseconds,
+                    now: now,
+                    leeway: leeway
+                )
+            }
+            .filter { $0.accessToken != rejectedToken }
+            .max { effectiveExpiry($0) < effectiveExpiry($1) }?
+            .accessToken
     }
 
     static func needsRefresh(
         expiresAtMilliseconds: TimeInterval?,
-        now: Date = Date()
+        now: Date = Date(),
+        leeway: TimeInterval = ClaudeCredentialStore.refreshLeeway
     ) -> Bool {
         guard let expiresAtMilliseconds else { return false }
         let expiresAt = Date(timeIntervalSince1970: expiresAtMilliseconds / 1000)
-        return expiresAt.timeIntervalSince(now) <= refreshLeeway
+        return expiresAt.timeIntervalSince(now) <= leeway
     }
 
-    private func readCredentials() throws -> Credentials {
-        do {
-            if let keychainCredentials = try readKeychainCredentials() {
-                return keychainCredentials
-            }
-        } catch {
-            // Claude Code can replace its Keychain item while rotating OAuth
-            // credentials. That may revoke an independently signed menu bar
-            // app's access even though the legacy credential file still has a
-            // usable access token. Fall through to the file before declaring
-            // the user signed out; Quota Blocks never refreshes either source.
-            if FileManager.default.fileExists(atPath: credentialURL.path) {
-                return try readFileCredentials()
-            }
-            throw error
-        }
-        return try readFileCredentials()
+    private static func effectiveExpiry(_ credentials: Credentials) -> TimeInterval {
+        credentials.expiresAtMilliseconds ?? .greatestFiniteMagnitude
     }
 
-    private func readKeychainCredentials() throws -> Credentials? {
-        let service = "Claude Code-credentials"
-        let account = NSUserName()
+    private func loadSources() -> [SourceReport] {
+        [keychainSource(), fileSource()]
+    }
+
+    // Claude Code 2.0 stored credentials in the login keychain; 2.1 stores
+    // them in ~/.claude/.credentials.json. Read both, never write either,
+    // and let the freshest usable token win.
+    private func keychainSource() -> SourceReport {
+        let name = "keychain \"\(Self.keychainService)\""
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
+            kSecAttrService: Self.keychainService,
+            kSecAttrAccount: NSUserName(),
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
         ]
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound {
-            return nil
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data else {
+                return SourceReport(name: name, detail: "empty item", credentials: nil)
+            }
+            guard let credentials = Self.parseCredentials(data) else {
+                return SourceReport(name: name, detail: "unrecognized payload", credentials: nil)
+            }
+            return SourceReport(
+                name: name,
+                detail: "found, \(Self.expiryDescription(credentials))",
+                credentials: credentials
+            )
+        case errSecItemNotFound:
+            return SourceReport(name: name, detail: "item not found (OSStatus \(status))", credentials: nil)
+        case errSecAuthFailed, errSecInteractionNotAllowed:
+            return SourceReport(name: name, detail: "access denied (OSStatus \(status))", credentials: nil)
+        default:
+            return SourceReport(name: name, detail: "read failed (OSStatus \(status))", credentials: nil)
         }
-        if status == errSecAuthFailed || status == errSecInteractionNotAllowed {
-            throw QuotaError.notSignedIn("Claude")
+    }
+
+    private func fileSource() -> SourceReport {
+        let url = credentialURL
+        let name = "file ~/.claude/.credentials.json"
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return SourceReport(name: name, detail: "missing", credentials: nil)
         }
-        guard status == errSecSuccess, let data = item as? Data else {
-            throw QuotaError.requestFailed("无法读取 Claude 钥匙串（错误 \(status)）。")
+        guard let data = try? Data(contentsOf: url) else {
+            return SourceReport(name: name, detail: "unreadable", credentials: nil)
         }
-        return try parseCredentials(
-            data
+        guard let credentials = Self.parseCredentials(data) else {
+            return SourceReport(name: name, detail: "unrecognized payload", credentials: nil)
+        }
+        return SourceReport(
+            name: name,
+            detail: "found, \(Self.expiryDescription(credentials))",
+            credentials: credentials
         )
     }
 
-    private func readFileCredentials() throws -> Credentials {
-        let url = credentialURL
-        guard let data = try? Data(contentsOf: url) else {
-            throw QuotaError.notSignedIn("Claude")
-        }
-        return try parseCredentials(data)
-    }
-
-    private func parseCredentials(_ data: Data) throws -> Credentials {
+    private static func parseCredentials(_ data: Data) -> Credentials? {
         guard
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let oauth = root["claudeAiOauth"] as? [String: Any],
             let accessToken = oauth["accessToken"] as? String,
             !accessToken.isEmpty
         else {
-            throw QuotaError.notSignedIn("Claude")
+            return nil
         }
 
         return Credentials(
@@ -159,8 +247,22 @@ actor ClaudeCredentialStore {
         )
     }
 
+    private static func expiryDescription(_ credentials: Credentials) -> String {
+        guard let milliseconds = credentials.expiresAtMilliseconds else {
+            return "no expiry"
+        }
+        let expiresAt = Date(timeIntervalSince1970: milliseconds / 1000)
+        let formatter = ISO8601DateFormatter()
+        let state = needsRefresh(expiresAtMilliseconds: milliseconds) ? "expired" : "valid"
+        return "expires \(formatter.string(from: expiresAt)) (\(state))"
+    }
+
     private var credentialURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        // Claude Code resolves ~/.claude through $HOME (Node's os.homedir),
+        // while NSHomeDirectory ignores $HOME on macOS; follow Claude Code so
+        // both processes always agree on where the credentials live.
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+        return URL(fileURLWithPath: home)
             .appendingPathComponent(".claude/.credentials.json")
     }
 }

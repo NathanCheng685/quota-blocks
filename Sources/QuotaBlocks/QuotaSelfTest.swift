@@ -44,6 +44,96 @@ enum QuotaSelfTest {
             !QuotaError.notSignedIn("Claude").isTemporary,
             "Signed-out state is not temporary"
         )
+        try expect(
+            !QuotaError.credentialsExpired("Claude").isTemporary,
+            "Expired credentials are not temporary"
+        )
+
+        let selectionNow = Date(timeIntervalSince1970: 10_000)
+        let expiredToken = ClaudeCredentialStore.Credentials(
+            accessToken: "expired-token",
+            expiresAtMilliseconds: 9_000_000
+        )
+        let freshToken = ClaudeCredentialStore.Credentials(
+            accessToken: "fresh-token",
+            expiresAtMilliseconds: 20_000_000
+        )
+        let fresherToken = ClaudeCredentialStore.Credentials(
+            accessToken: "fresher-token",
+            expiresAtMilliseconds: 30_000_000
+        )
+        let eternalToken = ClaudeCredentialStore.Credentials(
+            accessToken: "eternal-token",
+            expiresAtMilliseconds: nil
+        )
+        try expect(
+            ClaudeCredentialStore.usableToken(
+                from: [expiredToken, freshToken],
+                rejectedToken: nil,
+                now: selectionNow
+            ) == "fresh-token",
+            "Fresh token wins over an expired one"
+        )
+        try expect(
+            ClaudeCredentialStore.usableToken(
+                from: [freshToken, fresherToken],
+                rejectedToken: nil,
+                now: selectionNow
+            ) == "fresher-token",
+            "Latest expiry wins between usable tokens"
+        )
+        try expect(
+            ClaudeCredentialStore.usableToken(
+                from: [freshToken, eternalToken],
+                rejectedToken: nil,
+                now: selectionNow
+            ) == "eternal-token",
+            "Token without expiry counts as farthest expiry"
+        )
+        try expect(
+            ClaudeCredentialStore.usableToken(
+                from: [expiredToken],
+                rejectedToken: nil,
+                now: selectionNow
+            ) == nil,
+            "Expired-only credentials yield no usable token"
+        )
+        try expect(
+            ClaudeCredentialStore.usableToken(
+                from: [freshToken],
+                rejectedToken: "fresh-token",
+                now: selectionNow
+            ) == nil,
+            "Server-rejected token is not reused"
+        )
+        try expect(
+            ClaudeCredentialStore.usableToken(
+                from: [expiredToken],
+                rejectedToken: nil,
+                now: Date(timeIntervalSince1970: 8_999),
+                leeway: 0
+            ) == "expired-token",
+            "Zero leeway accepts a not-yet-expired token"
+        )
+
+        try expect(
+            ClaudeCodeRefreshTrigger.shouldAttempt(lastAttemptAt: nil, now: selectionNow),
+            "First refresh probe is allowed"
+        )
+        try expect(
+            !ClaudeCodeRefreshTrigger.shouldAttempt(
+                lastAttemptAt: selectionNow.addingTimeInterval(-30),
+                now: selectionNow
+            ),
+            "Refresh probe honors the cooldown"
+        )
+        try expect(
+            ClaudeCodeRefreshTrigger.shouldAttempt(
+                lastAttemptAt: selectionNow.addingTimeInterval(-ClaudeCodeRefreshTrigger.attemptCooldown),
+                now: selectionNow
+            ),
+            "Refresh probe resumes after the cooldown"
+        )
 
         try expect(
             QuotaSnapshot(provider: .chatGPT, usedPercent: 100, resetsAt: nil).filledBlockCount == 0,

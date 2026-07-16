@@ -25,6 +25,14 @@ if CommandLine.arguments.contains("--self-test") {
     }
 }
 
+if CommandLine.arguments.contains("--probe-credentials") {
+    Task {
+        print(await ClaudeQuotaService.credentialDiagnostics())
+        exit(EXIT_SUCCESS)
+    }
+    dispatchMain()
+}
+
 if CommandLine.arguments.contains("--probe-live") {
     Task {
         do {
