@@ -20,9 +20,9 @@
       so the two ports can never drift apart. LogicalName is set explicitly
       because these files live outside the project directory.
     -->
-    <EmbeddedResource Include="..\Sources\QuotaBlocks\Resources\chatgpt.svg"
+    <EmbeddedResource Include="..\mac\Sources\QuotaBlocks\Resources\chatgpt.svg"
                       LogicalName="QuotaBlocks.chatgpt.svg" />
-    <EmbeddedResource Include="..\Sources\QuotaBlocks\Resources\claude.svg"
+    <EmbeddedResource Include="..\mac\Sources\QuotaBlocks\Resources\claude.svg"
                       LogicalName="QuotaBlocks.claude.svg" />
   </ItemGroup>
 

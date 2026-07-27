@@ -131,7 +131,7 @@ Set `QUOTABLOCKS_LOG=1` to get a `quota-blocks.log` next to the executable.
 
 ## Attribution
 
-The provider marks are embedded straight from `../Sources/QuotaBlocks/Resources`
+The provider marks are embedded straight from `../mac/Sources/QuotaBlocks/Resources`
 rather than copied, so the two ports cannot drift apart. The macOS app adapted
 them from the MIT-licensed [CodexBar](https://github.com/steipete/CodexBar).
 OpenAI, ChatGPT, Anthropic, Claude, and Fable are trademarks of their respective

@@ -1,6 +1,8 @@
 .DS_Store
 .build/
 dist/
+mac/.build/
+mac/dist/
 *.xcuserstate
 .swiftpm/
 HANDOFF.md

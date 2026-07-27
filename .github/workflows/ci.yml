@@ -10,10 +10,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run self-tests
+        working-directory: mac
         run: swift run QuotaBlocks --self-test
       - name: Build app bundle
+        working-directory: mac
         run: ./scripts/build-app.sh
       - name: Verify bundle
+        working-directory: mac
         run: |
           plutil -lint "dist/Quota Blocks.app/Contents/Info.plist"
           codesign --verify --deep --strict "dist/Quota Blocks.app"
