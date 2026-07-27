@@ -4,3 +4,9 @@ dist/
 *.xcuserstate
 .swiftpm/
 HANDOFF.md
+
+# Windows port
+windows/bin/
+windows/obj/
+*.user
+quota-blocks.log

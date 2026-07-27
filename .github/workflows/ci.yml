@@ -17,3 +17,13 @@ jobs:
         run: |
           plutil -lint "dist/Quota Blocks.app/Contents/Info.plist"
           codesign --verify --deep --strict "dist/Quota Blocks.app"
+
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build
+        run: dotnet build windows/QuotaBlocksWin.csproj -c Release --nologo -warnaserror

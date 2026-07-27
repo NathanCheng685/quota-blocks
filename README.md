@@ -2,6 +2,8 @@
 
 A compact, native macOS menu bar app for seeing your remaining ChatGPT/Codex and Claude subscription quotas at a glance.
 
+There is also a **[Windows port](windows/)** in `windows/`, which draws the same two rows directly onto the taskbar. It shares this repository's provider icons and reads the same local sources.
+
 The menu bar item uses two compact rows and automatically adjusts between roughly 73–78 pt wide so percentages are never compressed. Each row contains a provider icon, five small blocks, and the remaining weekly percentage. Click it for reset dates with weekdays and Claude’s 5-hour, weekly, and Fable limits. The menu can switch between English and Chinese and control whether Quota Blocks launches at login.
 
 > Quota Blocks is an independent, unofficial open-source project. It is not affiliated with, endorsed by, or sponsored by OpenAI or Anthropic.
