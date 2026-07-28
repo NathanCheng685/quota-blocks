@@ -35,7 +35,7 @@ public static class ClaudeQuotaService
         {
             try
             {
-                return await FetchFromApiAsync(token, cancellationToken);
+                return await FetchFromApiAsync(token, cancellationToken).ConfigureAwait(false);
             }
             catch (QuotaException) when (ReadDesktopUsage() is not null)
             {
@@ -84,7 +84,7 @@ public static class ClaudeQuotaService
         request.Headers.TryAddWithoutValidation("anthropic-beta", "oauth-2025-04-20");
         request.Headers.TryAddWithoutValidation("User-Agent", "claude-code/2.1.0");
 
-        using var response = await Http.SendAsync(request, cancellationToken);
+        using var response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
         {
             throw QuotaException.NotSignedIn("Claude");
@@ -94,7 +94,7 @@ public static class ClaudeQuotaService
             throw QuotaException.Temporary($"Claude 额度读取失败（HTTP {(int)response.StatusCode}）。");
         }
 
-        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         return ParseUsage(payload);
     }
 

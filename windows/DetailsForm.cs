@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 
 namespace QuotaBlocks;
 
@@ -21,6 +22,9 @@ public sealed class DetailsForm : LayeredForm
 
     private readonly OverlayForm owner;
     private readonly List<Item> items = [];
+    // Held in a field so the callback is not collected while the hook is live.
+    private Native.HookProc? mouseProc;
+    private IntPtr mouseHook;
     private int hoverIndex = -1;
 
     public DetailsForm(OverlayForm owner) : base(clickThroughFocus: false)
@@ -68,7 +72,52 @@ public sealed class DetailsForm : LayeredForm
 
         TakeForeground();
         Activate();
+
+        // Deactivate alone is not enough to dismiss the panel: taking the
+        // foreground can be refused, and clicks on the desktop or the taskbar do
+        // not always produce one. Watching the mouse directly closes it on any
+        // click outside, whatever the focus situation is.
+        mouseProc = OnGlobalMouse;
+        mouseHook = Native.SetWindowsHookEx(
+            Native.WH_MOUSE_LL, mouseProc, Native.GetModuleHandle(null), 0);
+
         Log.Write($"panel shown at {Bounds}, foreground={Native.GetForegroundWindow() == Handle}");
+    }
+
+    private IntPtr OnGlobalMouse(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0 && IsButtonDown(wParam))
+        {
+            var data = Marshal.PtrToStructure<Native.MSLLHOOKSTRUCT>(lParam);
+            if (!Bounds.Contains(data.Point.X, data.Point.Y))
+            {
+                // Never close from inside the hook: it runs ahead of the click
+                // being delivered, and tearing the window down here would stall
+                // input for every process on the machine.
+                BeginInvoke(Close);
+            }
+        }
+
+        return Native.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+    }
+
+    private static bool IsButtonDown(IntPtr message) =>
+        (int)message is Native.WM_LBUTTONDOWN or Native.WM_RBUTTONDOWN or Native.WM_MBUTTONDOWN;
+
+    private void ReleaseMouseHook()
+    {
+        if (mouseHook != IntPtr.Zero)
+        {
+            Native.UnhookWindowsHookEx(mouseHook);
+            mouseHook = IntPtr.Zero;
+        }
+        mouseProc = null;
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        ReleaseMouseHook();
+        base.OnFormClosed(e);
     }
 
     private float DpiScale => DeviceDpi / 96f;
