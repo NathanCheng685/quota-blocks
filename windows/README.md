@@ -89,12 +89,16 @@ Check the data path without the UI:
 
 ## Using it
 
-- **Click the pill** — opens the details panel: every window with its remaining
+- **Click the bar** — opens the details panel: every window with its remaining
   percentage and reset time, the data source, and the actions below.
 - **切换为 English / 切换为中文** — language toggle, remembered in the registry.
 - **开机自动启动** — launch at login, a `Run` entry under `HKCU`.
 - **退出** — quits. There is no tray icon; this is the only way out.
 - Click anywhere else, or press `Esc`, to dismiss the panel.
+
+The bar follows the taskbar itself: it stays on top of everything while the
+taskbar is showing, and disappears whenever the taskbar does — under a fullscreen
+window, or when an auto-hiding taskbar has slid away.
 
 The app refreshes every 2 minutes. There is deliberately no manual refresh and no
 way to reset a quota.
@@ -102,8 +106,10 @@ way to reset a quota.
 ## Implementation notes
 
 Both windows are layered (`UpdateLayeredWindow`) rather than ordinary WinForms
-surfaces, so the rounded corners composite cleanly over the taskbar with
-per-pixel alpha. A few things that are easy to get wrong and are worth keeping:
+surfaces. That is what lets the bar have no background of its own and still
+composite cleanly onto the taskbar, and what gives the panel antialiased rounded
+corners over whatever is behind it. A few things that are easy to get wrong and
+are worth keeping:
 
 - The bitmap must be **premultiplied** before `UpdateLayeredWindow`; GDI+ hands
   back straight alpha, and the light theme blows out without the conversion.
@@ -114,16 +120,28 @@ per-pixel alpha. A few things that are easy to get wrong and are worth keeping:
 - Because the bar never activates, this process is usually not the foreground
   one, and the panel's `Activate()` is refused — leaving it open with no
   `Deactivate` to dismiss it. `AttachThreadInput` to the current foreground
-  thread first makes `SetForegroundWindow` legal.
+  thread first makes `SetForegroundWindow` legal. Even so, `Deactivate` is not
+  trusted on its own: the panel installs a `WH_MOUSE_LL` hook while it is open
+  and closes on any click outside its bounds, whatever the focus situation is.
+- That hook runs on the UI thread's message loop, so blocking that thread would
+  stall input machine-wide. The quota services `ConfigureAwait(false)` their way
+  off it, which matters because the Codex reader waits on a child process as it
+  tears down.
 - The bar has no background, but a layered window passes clicks through any
   pixel with zero alpha, so it still fills itself with `alpha = 3` to stay
   clickable.
 - Clicking the taskbar raises `Shell_TrayWnd` within the topmost band and the bar
   lives inside the taskbar's own rectangle, so it gets covered. A
-  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` re-asserts topmost immediately; a
-  4-second timer is only a backstop for z-order changes that raise no event.
-- That same hook hides the bar while a fullscreen window owns the screen, so it
-  does not float over video and games the way the taskbar never does.
+  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` re-asserts topmost immediately.
+- Whether to show at all is read from the taskbar window's real position, not
+  inferred from the working area — an auto-hidden taskbar slides off-screen and
+  never gives the working area back. One test (is enough of the strip on screen
+  to sit in?) covers auto-hide, a taskbar moved to another edge, and fullscreen
+  windows alike, and the bar positions itself against that same rectangle.
+- An `EVENT_OBJECT_LOCATIONCHANGE` hook **scoped to the taskbar's own thread**
+  makes that immediate; unscoped it would be every window move on the system. A
+  one-second timer re-evaluates as a backstop, which also recovers if explorer
+  restarts and takes the hook with it.
 - All metrics are authored at 96 dpi and scaled by `DeviceDpi / 96`, so the
   widget stays crisp at 150%/200% scaling.
 
