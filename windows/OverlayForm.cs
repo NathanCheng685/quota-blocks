@@ -34,7 +34,10 @@ public sealed class OverlayForm : LayeredForm
     private DetailsForm? details;
     // Held in a field so the callback is not collected while the hook is live.
     private Native.WinEventProc? foregroundProc;
+    private Native.WinEventProc? taskbarProc;
     private IntPtr foregroundHook;
+    private IntPtr taskbarHook;
+    private Rectangle lastTaskbar = Rectangle.Empty;
     private DateTime lastToggleAt = DateTime.MinValue;
     private DateTime detailsClosedAt = DateTime.MinValue;
     private CancellationTokenSource? inFlight;
@@ -50,10 +53,11 @@ public sealed class OverlayForm : LayeredForm
         refreshTimer.Interval = 120_000;
         refreshTimer.Tick += (_, _) => _ = RefreshAsync();
 
-        // Backstop only — the foreground hook below handles the common cases
-        // immediately, and this catches z-order changes that raise no event.
-        topmostTimer.Interval = 4_000;
-        topmostTimer.Tick += (_, _) => BringToFront();
+        // Backstop only — the shell hooks below handle the common cases
+        // immediately. This catches what raises no event at all, and recovers if
+        // explorer restarts and takes the taskbar hook with it.
+        topmostTimer.Interval = 1_000;
+        topmostTimer.Tick += (_, _) => ApplyVisibility();
     }
 
     public QuotaState CodexState => codexState;
@@ -80,7 +84,7 @@ public sealed class OverlayForm : LayeredForm
         // the bar lives inside the taskbar's own rectangle, so it gets covered
         // completely. Waiting for the backstop timer left it hidden for seconds;
         // re-asserting the moment the foreground changes makes it imperceptible.
-        foregroundProc = OnForegroundChanged;
+        foregroundProc = OnShellEvent;
         foregroundHook = Native.SetWinEventHook(
             Native.EVENT_SYSTEM_FOREGROUND,
             Native.EVENT_SYSTEM_FOREGROUND,
@@ -90,9 +94,27 @@ public sealed class OverlayForm : LayeredForm
             threadId: 0,
             Native.WINEVENT_OUTOFCONTEXT);
 
-        // The hook only reports changes, so settle the initial state explicitly:
+        // An auto-hiding taskbar slides away without any foreground change, so
+        // watch the taskbar window's own movement too. Scoped to its thread so
+        // this is not a firehose of every window move on the system.
+        var tray = Native.TaskbarWindow();
+        if (tray != IntPtr.Zero)
+        {
+            var trayThread = Native.GetWindowThreadProcessId(tray, out _);
+            taskbarProc = OnShellEvent;
+            taskbarHook = Native.SetWinEventHook(
+                Native.EVENT_OBJECT_LOCATIONCHANGE,
+                Native.EVENT_OBJECT_LOCATIONCHANGE,
+                IntPtr.Zero,
+                taskbarProc,
+                processId: 0,
+                trayThread,
+                Native.WINEVENT_OUTOFCONTEXT);
+        }
+
+        // The hooks only report changes, so settle the initial state explicitly:
         // the app may well have started under a fullscreen window.
-        ApplyForegroundWindow(Native.GetForegroundWindow());
+        ApplyVisibility();
 
         _ = RefreshAsync();
     }
@@ -104,38 +126,57 @@ public sealed class OverlayForm : LayeredForm
         Redraw();
     }
 
-    private void OnForegroundChanged(
+    private void OnShellEvent(
         IntPtr hook, uint eventType, IntPtr hwnd, int objectId, int childId, uint thread, uint time)
     {
         // WINEVENT_OUTOFCONTEXT delivers this on the installing thread's message
         // loop, so it is already the UI thread.
         if (IsDisposed || hwnd == Handle) return;
-        ApplyForegroundWindow(hwnd);
+        ApplyVisibility();
     }
 
     /// <summary>
-    /// Follows the taskbar: hidden while a fullscreen app owns the screen, on top
-    /// of everything otherwise. Without the first half the bar would float over
-    /// full-screen video and games, which is exactly where it is least wanted.
+    /// The bar exists to look like part of the taskbar, so it is shown exactly
+    /// when the taskbar itself is: hidden under fullscreen windows, and hidden
+    /// when an auto-hiding taskbar has slid away. Both are read from the taskbar
+    /// window's real position rather than inferred, because an auto-hidden
+    /// taskbar never gives the working area back.
     /// </summary>
-    private void ApplyForegroundWindow(IntPtr foreground)
+    private void ApplyVisibility()
     {
         var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
-        var covered = Native.CoversScreen(foreground, screen.Bounds);
+        var taskbar = Native.TaskbarBounds();
+        var onScreen = Rectangle.Intersect(taskbar, screen.Bounds);
 
-        if (covered)
+        // A retracted auto-hide taskbar leaves only a sliver behind, which is
+        // far too little to sit the bar in.
+        var taskbarShowing = onScreen.Height >= Height && onScreen.Width > 0;
+        var fullscreen = Native.CoversScreen(Native.GetForegroundWindow(), screen.Bounds);
+
+        if (!taskbarShowing || fullscreen)
         {
             if (!Visible) return;
+            Log.Write($"hiding: taskbarShowing={taskbarShowing} fullscreen={fullscreen}");
             details?.Close();
             Visible = false;
             return;
         }
 
+        // The taskbar location hook fires often, and measuring the content
+        // allocates, so only re-place the bar when the strip actually moved.
+        if (onScreen != lastTaskbar)
+        {
+            lastTaskbar = onScreen;
+            Reposition(onScreen);
+        }
+
         if (!Visible)
         {
+            Log.Write($"showing at {Bounds}");
             Visible = true;
             Redraw();
         }
+
         BringToFront();
     }
 
@@ -262,28 +303,34 @@ public sealed class OverlayForm : LayeredForm
         _ => "···",
     };
 
-    /// <summary>Centres the bar inside the taskbar strip at the bottom-left of the primary screen.</summary>
-    public void Reposition()
+    /// <summary>
+    /// Centres the bar in the taskbar strip, at its left end. Passing the strip
+    /// in keeps it aligned to where the taskbar really is; with no strip to sit
+    /// in it falls back to the bottom-left of the screen.
+    /// </summary>
+    public void Reposition(Rectangle taskbar = default)
     {
         var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
         var size = MeasureContent();
         var scale = DpiScale;
 
-        var taskbarTop = screen.WorkingArea.Bottom;
-        var taskbarHeight = screen.Bounds.Bottom - taskbarTop;
-
-        int top;
-        if (taskbarHeight > size.Height)
+        if (taskbar.IsEmpty)
         {
-            top = taskbarTop + (taskbarHeight - size.Height) / 2;
+            taskbar = Rectangle.Intersect(Native.TaskbarBounds(), screen.Bounds);
+        }
+
+        int top, left;
+        if (taskbar.Height >= size.Height && taskbar.Width > 0)
+        {
+            top = taskbar.Top + (taskbar.Height - size.Height) / 2;
+            left = taskbar.Left + (int)S(ScreenMargin, scale);
         }
         else
         {
-            // Auto-hidden or side-mounted taskbar: sit just above the bottom edge.
             top = screen.Bounds.Bottom - size.Height - (int)S(6f, scale);
+            left = screen.Bounds.Left + (int)S(ScreenMargin, scale);
         }
 
-        var left = screen.Bounds.Left + (int)S(ScreenMargin, scale);
         Bounds = new Rectangle(left, top, size.Width, size.Height);
     }
 
@@ -373,12 +420,12 @@ public sealed class OverlayForm : LayeredForm
         {
             SystemEvents.DisplaySettingsChanged -= OnEnvironmentChanged;
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-            if (foregroundHook != IntPtr.Zero)
+            foreach (var hook in new[] { foregroundHook, taskbarHook })
             {
-                Native.UnhookWinEvent(foregroundHook);
-                foregroundHook = IntPtr.Zero;
+                if (hook != IntPtr.Zero) Native.UnhookWinEvent(hook);
             }
-            foregroundProc = null;
+            foregroundHook = taskbarHook = IntPtr.Zero;
+            foregroundProc = taskbarProc = null;
             refreshTimer.Dispose();
             topmostTimer.Dispose();
             inFlight?.Cancel();

@@ -32,17 +32,24 @@ public static class CodexQuotaService
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(Timeout);
 
+        // ConfigureAwait(false) throughout: the caller is the UI thread, and the
+        // teardown in the finally below waits on a process. A global mouse hook
+        // lives on that thread while the details panel is open, so blocking it
+        // would stall input for the whole machine.
         try
         {
             await process.StandardInput.WriteLineAsync(
-                """{"method":"initialize","id":0,"params":{"clientInfo":{"name":"quota_blocks","title":"Quota Blocks","version":"1.0.0"}}}""");
-            await process.StandardInput.WriteLineAsync("""{"method":"initialized","params":{}}""");
-            await process.StandardInput.WriteLineAsync("""{"method":"account/rateLimits/read","id":1,"params":{}}""");
-            await process.StandardInput.FlushAsync(timeout.Token);
+                """{"method":"initialize","id":0,"params":{"clientInfo":{"name":"quota_blocks","title":"Quota Blocks","version":"1.0.0"}}}""")
+                .ConfigureAwait(false);
+            await process.StandardInput.WriteLineAsync("""{"method":"initialized","params":{}}""")
+                .ConfigureAwait(false);
+            await process.StandardInput.WriteLineAsync("""{"method":"account/rateLimits/read","id":1,"params":{}}""")
+                .ConfigureAwait(false);
+            await process.StandardInput.FlushAsync(timeout.Token).ConfigureAwait(false);
 
             while (!timeout.IsCancellationRequested)
             {
-                var line = await process.StandardOutput.ReadLineAsync(timeout.Token);
+                var line = await process.StandardOutput.ReadLineAsync(timeout.Token).ConfigureAwait(false);
                 if (line is null) break;
                 var snapshot = Parse(line);
                 if (snapshot is not null) return snapshot;

@@ -299,6 +299,58 @@ internal static class Native
     [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)]
     public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int capacity);
 
+    [DllImport("user32.dll", EntryPoint = "FindWindowW", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindow(string? className, string? windowName);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    public const int WH_MOUSE_LL = 14;
+    public const int WM_LBUTTONDOWN = 0x0201;
+    public const int WM_RBUTTONDOWN = 0x0204;
+    public const int WM_MBUTTONDOWN = 0x0207;
+    public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSLLHOOKSTRUCT
+    {
+        public POINT Point;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    public delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
+    public static extern IntPtr SetWindowsHookEx(int hookId, HookProc callback, IntPtr module, uint threadId);
+
+    [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+    public static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    public static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", EntryPoint = "GetModuleHandleW", CharSet = CharSet.Unicode)]
+    public static extern IntPtr GetModuleHandle(string? name);
+
+    /// <summary>
+    /// Where the taskbar actually is right now, or an empty rectangle when there
+    /// is none. Read from the window itself rather than from the working area,
+    /// because an auto-hidden taskbar slides off-screen without ever giving the
+    /// working area back.
+    /// </summary>
+    public static Rectangle TaskbarBounds()
+    {
+        var tray = FindWindow("Shell_TrayWnd", null);
+        if (tray == IntPtr.Zero || !IsWindowVisible(tray)) return Rectangle.Empty;
+        if (!GetWindowRect(tray, out var rect)) return Rectangle.Empty;
+        return Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom);
+    }
+
+    public static IntPtr TaskbarWindow() => FindWindow("Shell_TrayWnd", null);
+
     /// <summary>
     /// True when the window spans the whole monitor. The shell's own windows are
     /// excluded: the desktop and the taskbar are always screen-sized and must not
