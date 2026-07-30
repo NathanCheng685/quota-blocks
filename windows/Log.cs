@@ -19,15 +19,29 @@ public static class Log
     public static void Write(string message)
     {
         if (!Enabled) return;
+        Append(message);
+    }
+
+    /// <summary>
+    /// Always written, whether tracing is enabled or not. A failure the user did
+    /// not opt into logging is exactly the one worth having a record of.
+    /// </summary>
+    public static void Error(string message) => Append($"ERROR {message}");
+
+    private static void Append(string message)
+    {
         try
         {
             lock (Gate)
             {
-                File.AppendAllText(Path, $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+                File.AppendAllText(Path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
             }
         }
-        catch (IOException)
+        catch
         {
+            // Deliberately total: this is called from inside native callbacks
+            // where a throw would terminate the process, so the logger itself
+            // must never be the thing that fails.
         }
     }
 

@@ -86,16 +86,29 @@ public sealed class DetailsForm : LayeredForm
 
     private IntPtr OnGlobalMouse(int code, IntPtr wParam, IntPtr lParam)
     {
-        if (code >= 0 && IsButtonDown(wParam))
+        // Nothing may escape here. An exception thrown inside a native callback
+        // does not reach Application.ThreadException; the kernel terminates the
+        // process outright with STATUS_FATAL_USER_CALLBACK_EXCEPTION. A click
+        // that arrives while the panel is being torn down would otherwise take
+        // the whole app down with it, because both the Bounds read and the
+        // BeginInvoke throw once the form is disposed.
+        try
         {
-            var data = Marshal.PtrToStructure<Native.MSLLHOOKSTRUCT>(lParam);
-            if (!Bounds.Contains(data.Point.X, data.Point.Y))
+            if (code >= 0 && IsButtonDown(wParam) && !IsDisposed && IsHandleCreated)
             {
-                // Never close from inside the hook: it runs ahead of the click
-                // being delivered, and tearing the window down here would stall
-                // input for every process on the machine.
-                BeginInvoke(Close);
+                var data = Marshal.PtrToStructure<Native.MSLLHOOKSTRUCT>(lParam);
+                if (!Bounds.Contains(data.Point.X, data.Point.Y))
+                {
+                    // Never close from inside the hook: it runs ahead of the
+                    // click being delivered, and tearing the window down here
+                    // would stall input for every process on the machine.
+                    BeginInvoke(Close);
+                }
             }
+        }
+        catch (Exception e)
+        {
+            Log.Error($"mouse hook failed: {e}");
         }
 
         return Native.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
@@ -118,6 +131,14 @@ public sealed class DetailsForm : LayeredForm
     {
         ReleaseMouseHook();
         base.OnFormClosed(e);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        // Belt and braces: the hook must be gone before the form is, on every
+        // path, or a later click reaches a callback whose form no longer exists.
+        if (disposing) ReleaseMouseHook();
+        base.Dispose(disposing);
     }
 
     private float DpiScale => DeviceDpi / 96f;

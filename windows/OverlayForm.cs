@@ -129,10 +129,22 @@ public sealed class OverlayForm : LayeredForm
     private void OnShellEvent(
         IntPtr hook, uint eventType, IntPtr hwnd, int objectId, int childId, uint thread, uint time)
     {
-        // WINEVENT_OUTOFCONTEXT delivers this on the installing thread's message
-        // loop, so it is already the UI thread.
-        if (IsDisposed || hwnd == Handle) return;
-        ApplyVisibility();
+        // Nothing may escape here. An exception thrown inside a native callback
+        // does not reach Application.ThreadException; the kernel terminates the
+        // process outright with STATUS_FATAL_USER_CALLBACK_EXCEPTION, with no
+        // managed stack trace anywhere. A skipped update is always the better
+        // outcome.
+        try
+        {
+            // WINEVENT_OUTOFCONTEXT delivers this on the installing thread's
+            // message loop, so it is already the UI thread.
+            if (IsDisposed || !IsHandleCreated || hwnd == Handle) return;
+            ApplyVisibility();
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shell event failed: {e}");
+        }
     }
 
     /// <summary>
