@@ -15,8 +15,8 @@ internal static class Program
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out var isFirstInstance);
         if (!isFirstInstance) return 0;
 
-        Application.ThreadException += (_, e) => Log.Write($"UI exception: {e.Exception}");
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Write($"fatal: {e.ExceptionObject}");
+        Application.ThreadException += (_, e) => Log.Error($"UI exception: {e.Exception}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error($"fatal: {e.ExceptionObject}");
 
         ApplicationConfiguration.Initialize();
         Application.Run(new OverlayForm());
