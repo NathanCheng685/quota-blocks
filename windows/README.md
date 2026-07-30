@@ -33,8 +33,10 @@ Percentages always mean **remaining** quota, not used.
 
 1. **Claude Code CLI** — `%USERPROFILE%\.claude\.credentials.json` plus Anthropic's
    usage endpoint. Gives the 5-hour session, weekly, and Fable limits *with*
-   reset times. These credentials are treated as strictly read-only: Claude Code
-   owns and rotates them, and this app never writes them.
+   reset times. When the access token expires, the app runs the local Claude CLI
+   once with a deliberately invalid model so Claude Code can refresh its own
+   credentials without consuming quota. Claude Code owns and writes those
+   credentials; this app never rotates or writes them directly.
 2. **Claude desktop app** — `%APPDATA%\Claude\plan-usage-history.json`. No
    network and no credentials, but only the used percentages for the 5-hour and
    weekly windows, no reset times, and it only advances while the desktop app is
@@ -50,8 +52,9 @@ nothing to show rather than something that failed to parse:
 该来源不含重置时间 · 运行 claude auth login 可恢复
 ```
 
-Running `claude auth login` in a terminal restores the richer source; the app
-switches back on its next refresh, no restart needed.
+If the longer-lived refresh token itself has expired, running `claude auth login`
+in a terminal restores the richer source; the app switches back on its next
+refresh, no restart needed.
 
 Nothing is ever sent anywhere except Anthropic's own usage endpoint, using
 credentials that are already on the machine.

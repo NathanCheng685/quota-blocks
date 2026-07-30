@@ -18,7 +18,7 @@ namespace QuotaBlocks;
 public static class ClaudeQuotaService
 {
     private const string UsageUrl = "https://api.anthropic.com/api/oauth/usage";
-    private static readonly TimeSpan ExpiryLeeway = TimeSpan.FromSeconds(60);
+    private static readonly ClaudeCredentialStore Credentials = new();
 
     private static readonly HttpClient Http = new(new HttpClientHandler
     {
@@ -30,7 +30,7 @@ public static class ClaudeQuotaService
 
     public static async Task<QuotaSnapshot> FetchAsync(CancellationToken cancellationToken)
     {
-        var token = ReadAccessToken();
+        var token = await Credentials.AccessTokenAsync(cancellationToken).ConfigureAwait(false);
         if (token is not null)
         {
             try
@@ -53,20 +53,7 @@ public static class ClaudeQuotaService
     /// <summary>Human-readable rundown of every source, for the details popup.</summary>
     public static string Diagnostics()
     {
-        var lines = new List<string>();
-
-        var path = CredentialsPath;
-        if (!File.Exists(path))
-        {
-            lines.Add("CLI 凭据: 不存在");
-        }
-        else
-        {
-            var expiry = ReadExpiry();
-            lines.Add(expiry is null
-                ? "CLI 凭据: 无法解析"
-                : $"CLI 凭据: {(expiry > DateTime.Now ? "有效" : "已过期")} ({expiry:yyyy-MM-dd HH:mm})");
-        }
+        var lines = new List<string> { Credentials.Diagnostics() };
 
         var desktop = ReadDesktopSample();
         lines.Add(desktop is null
@@ -153,50 +140,8 @@ public static class ClaudeQuotaService
         return new QuotaWindow(Math.Clamp((int)Math.Round(percent.GetDouble()), 0, 100), resetsAt);
     }
 
-    private static string CredentialsPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
-
     private static string DesktopUsagePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Claude", "plan-usage-history.json");
-
-    private static JsonElement? OauthElement()
-    {
-        try
-        {
-            if (!File.Exists(CredentialsPath)) return null;
-            using var document = JsonDocument.Parse(File.ReadAllText(CredentialsPath));
-            return document.RootElement.TryGetProperty("claudeAiOauth", out var oauth)
-                ? oauth.Clone()
-                : null;
-        }
-        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
-    private static DateTime? ReadExpiry()
-    {
-        var oauth = OauthElement();
-        if (oauth is null) return null;
-        return oauth.Value.TryGetProperty("expiresAt", out var expires) && expires.ValueKind == JsonValueKind.Number
-            ? DateTimeOffset.FromUnixTimeMilliseconds(expires.GetInt64()).LocalDateTime
-            : null;
-    }
-
-    private static string? ReadAccessToken()
-    {
-        var oauth = OauthElement();
-        if (oauth is null) return null;
-
-        var token = oauth.Value.TryGetProperty("accessToken", out var t) ? t.GetString() : null;
-        if (string.IsNullOrEmpty(token)) return null;
-
-        var expiry = ReadExpiry();
-        if (expiry is not null && expiry.Value - DateTime.Now <= ExpiryLeeway) return null;
-
-        return token;
-    }
 
     private readonly record struct DesktopSample(DateTime Timestamp, int? FiveHour, int? SevenDay);
 

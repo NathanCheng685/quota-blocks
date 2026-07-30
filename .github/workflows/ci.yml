@@ -28,5 +28,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Run self-tests
+        run: dotnet run --project windows/tests/QuotaBlocks.SelfTests/QuotaBlocks.SelfTests.csproj -c Release
       - name: Build
         run: dotnet build windows/QuotaBlocksWin.csproj -c Release --nologo -warnaserror
