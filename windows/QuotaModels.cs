@@ -55,15 +55,19 @@ public abstract record QuotaState
 /// </summary>
 public sealed class QuotaException : Exception
 {
-    public QuotaException(string message, bool isTemporary) : base(message)
+    public QuotaException(string message, bool isTemporary, bool isUnauthorized = false) : base(message)
     {
         IsTemporary = isTemporary;
+        IsUnauthorized = isUnauthorized;
     }
 
     public bool IsTemporary { get; }
 
+    /// <summary>The credentials were rejected, so a refresh is worth attempting.</summary>
+    public bool IsUnauthorized { get; }
+
     public static QuotaException NotSignedIn(string provider) =>
-        new($"{provider} 未登录", isTemporary: false);
+        new($"{provider} 未登录", isTemporary: false, isUnauthorized: true);
 
     public static QuotaException Missing(string message) => new(message, isTemporary: false);
 

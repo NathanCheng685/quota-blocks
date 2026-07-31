@@ -40,10 +40,20 @@ Percentages always mean **remaining** quota, not used.
    weekly windows, no reset times, and it only advances while the desktop app is
    running.
 
-The app prefers (1) and silently falls back to (2) when the CLI's token is
-missing or expired. On the fallback the panel says so, and says why the reset
-times are absent — the desktop app's log simply does not record them, so there is
-nothing to show rather than something that failed to parse:
+The stored access token only lasts a few hours, which would leave (1) available
+briefly after each sign-in and then gone for the rest of the day. So when it has
+expired, the app runs your own `claude` CLI once with a model name that cannot
+exist: Claude Code refreshes its own access token before sending the request, the
+request fails before consuming any quota, and the app re-reads what Claude Code
+wrote. Claude Code owns the rotating refresh token — this app never calls the
+OAuth endpoint and never writes credential storage. Attempts are spaced ten
+minutes apart so a genuinely signed-out CLI cannot cause a launch every cycle.
+
+If that cannot recover the session, the app falls back to (2). The bar dims the
+Claude percentage to show it is on the lesser source — the number is still real,
+but it can go stale — and the panel says so, including why the reset times are
+absent. The desktop app's log simply does not record them, so there is nothing to
+show rather than something that failed to parse:
 
 ```
 来源：Claude 桌面版本地记录 · 07-27 00:13
@@ -85,6 +95,12 @@ Check the data path without the UI:
 
 ```powershell
 .\bin\Release\net8.0-windows\QuotaBlocks.exe --probe
+```
+
+Add `--refresh` to also exercise the Claude Code credential refresh:
+
+```powershell
+.\bin\Release\net8.0-windows\QuotaBlocks.exe --probe --refresh
 ```
 
 ## Using it

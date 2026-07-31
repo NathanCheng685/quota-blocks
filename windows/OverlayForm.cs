@@ -282,8 +282,14 @@ public sealed class OverlayForm : LayeredForm
 
         x += BlockCount * blockWidth + (BlockCount - 1) * S(BlockGap, scale) + S(ValueGap, scale);
 
+        // A reading from a degraded source is dimmed rather than hidden: the
+        // number is still real, but it can go stale, and the bar was previously
+        // giving no hint at all that it had fallen back. The panel says why.
+        var trustworthy = state is QuotaState.Available available2
+            && available2.Snapshot.Source != QuotaSource.ClaudeDesktopLog;
+
         using var font = Fonts.Numeric(ValueFontSize(scale));
-        using var brush = new SolidBrush(state is QuotaState.Available ? theme.Text : theme.SecondaryText);
+        using var brush = new SolidBrush(trustworthy ? theme.Text : theme.SecondaryText);
         var text = ValueText(state);
         var textSize = g.MeasureString(text, font, PointF.Empty, StringFormat.GenericTypographic);
         g.DrawString(text, font, brush, x, top + (rowHeight - textSize.Height) / 2f, StringFormat.GenericTypographic);

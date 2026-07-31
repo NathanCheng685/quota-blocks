@@ -31,23 +31,56 @@ public static class ClaudeQuotaService
     public static async Task<QuotaSnapshot> FetchAsync(CancellationToken cancellationToken)
     {
         var token = ReadAccessToken();
+
+        // The stored access token only lasts a few hours, so without this the
+        // richer source would be available only briefly after each sign-in and
+        // then silently degrade to the desktop log for the rest of the day.
+        if (token is null &&
+            await ClaudeCodeRefresh.RequestAsync(cancellationToken).ConfigureAwait(false))
+        {
+            token = ReadAccessToken();
+        }
+
         if (token is not null)
         {
             try
             {
                 return await FetchFromApiAsync(token, cancellationToken).ConfigureAwait(false);
             }
-            catch (QuotaException) when (ReadDesktopUsage() is not null)
+            catch (QuotaException e) when (e.IsUnauthorized)
             {
-                // The signed-in path broke; the desktop log is still better than a blank row.
+                // The server rejected a token we believed was current. Let Claude
+                // Code rotate it and try once more before falling back.
+                var refreshed = await RefreshedTokenAsync(token, cancellationToken).ConfigureAwait(false);
+                if (refreshed is not null)
+                {
+                    try
+                    {
+                        return await FetchFromApiAsync(refreshed, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception retry) when (retry is QuotaException or HttpRequestException)
+                    {
+                        Log.Write($"Claude retry after refresh failed: {retry.Message}");
+                    }
+                }
             }
-            catch (HttpRequestException) when (ReadDesktopUsage() is not null)
+            catch (Exception e) when (e is QuotaException or HttpRequestException)
             {
+                // The signed-in path broke; the desktop log is still better than
+                // a blank row.
+                Log.Write($"Claude API read failed: {e.Message}");
             }
         }
 
         return ReadDesktopUsage()
             ?? throw QuotaException.NotSignedIn("Claude");
+    }
+
+    private static async Task<string?> RefreshedTokenAsync(string rejected, CancellationToken cancellationToken)
+    {
+        if (!await ClaudeCodeRefresh.RequestAsync(cancellationToken).ConfigureAwait(false)) return null;
+        var token = ReadAccessToken();
+        return token == rejected ? null : token;
     }
 
     /// <summary>Human-readable rundown of every source, for the details popup.</summary>
@@ -87,7 +120,7 @@ public static class ClaudeQuotaService
         using var response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
         {
-            throw QuotaException.NotSignedIn("Claude");
+            throw new QuotaException("Claude 凭据被拒绝", isTemporary: false, isUnauthorized: true);
         }
         if (!response.IsSuccessStatusCode)
         {

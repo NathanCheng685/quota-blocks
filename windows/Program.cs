@@ -10,7 +10,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Contains("--probe")) return Probe();
+        if (args.Contains("--probe")) return Probe(refresh: args.Contains("--refresh"));
 
         using var mutex = new Mutex(initiallyOwned: true, MutexName, out var isFirstInstance);
         if (!isFirstInstance) return 0;
@@ -24,10 +24,20 @@ internal static class Program
     }
 
     /// <summary>Headless read of both providers, for checking the data path without the UI.</summary>
-    private static int Probe()
+    private static int Probe(bool refresh)
     {
         AttachConsole(-1);
         Console.OutputEncoding = Encoding.UTF8;
+
+        if (refresh)
+        {
+            // Exercises the real refresh path: Claude Code rotates its own
+            // credentials, this app only re-reads them.
+            Console.WriteLine("== Refresh ==");
+            Console.WriteLine($"  claude CLI: {ClaudeCodeRefresh.LocateCli() ?? "not found"}");
+            var ran = ClaudeCodeRefresh.RequestAsync(CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"  probe ran: {ran}");
+        }
 
         Report("Codex", () => CodexQuotaService.FetchAsync(CancellationToken.None));
         Console.WriteLine($"  executable: {CodexQuotaService.LocateExecutable() ?? "not found"}");
