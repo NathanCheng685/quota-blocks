@@ -117,7 +117,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func addProviderSection(_ provider: QuotaProvider, state: QuotaState, to menu: NSMenu) {
-        let heading = NSMenuItem(title: provider.rawValue, action: nil, keyEquivalent: "")
+        var title = provider.rawValue
+        if case let .available(snapshot) = state, let plan = snapshot.plan {
+            title += " · \(plan)"
+        }
+        let heading = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         heading.isEnabled = false
         menu.addItem(heading)
 
@@ -136,9 +140,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 menu.addItem(windowItem(label: text("周额度", "Weekly"), window: snapshot.weekly))
             }
-        case .unavailable:
-            menu.addItem(disabledItem("  \(text("暂时无法读取，请确认已登录", "Unavailable — check that you’re signed in"))"))
+        case let .unavailable(failure):
+            menu.addItem(disabledItem("  \(failureText(failure, provider: provider))"))
         }
+    }
+
+    private func failureText(_ failure: QuotaFailureKind, provider: QuotaProvider) -> String {
+        switch failure {
+        case .notSignedIn:
+            provider == .claude
+                ? text("未登录：在终端运行 claude，再输入 /login", "Signed out — run `claude` in Terminal, then /login")
+                : text("未登录：请打开 ChatGPT 应用完成登录", "Signed out — sign in to the ChatGPT app")
+        case .credentialsExpired:
+            text("凭据已过期，使用一次 Claude Code 后自动恢复", "Credentials expired — recovers after one Claude Code use")
+        case let .rateLimited(until):
+            if let until {
+                text("接口限流中，\(formatClockTime(until)) 后自动重试", "Rate limited — retrying after \(formatClockTime(until))")
+            } else {
+                text("接口限流中，稍后自动重试", "Rate limited — retrying soon")
+            }
+        case .executableMissing:
+            text("未找到 ChatGPT/Codex，请先安装 ChatGPT 应用", "ChatGPT/Codex not found — install the ChatGPT app")
+        case .temporary:
+            text("暂时无法读取，请确认已登录", "Unavailable — check that you’re signed in")
+        }
+    }
+
+    private func formatClockTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = language == .chinese ? Locale(identifier: "zh_CN") : Locale(identifier: "en_US")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     private func windowItem(label: String, window: QuotaWindow) -> NSMenuItem {
@@ -216,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             {
                 return previousState
             }
-            return .unavailable(error.localizedDescription)
+            return .unavailable((error as? QuotaError)?.failureKind ?? .temporary)
         }
     }
 

@@ -37,13 +37,13 @@ if CommandLine.arguments.contains("--probe-live") {
     Task {
         do {
             let chatGPT = try await ChatGPTQuotaService.fetch()
-            print("ChatGPT remaining: \(chatGPT.remainingPercent)%")
+            print("ChatGPT remaining: \(chatGPT.remainingPercent)%\(chatGPT.plan.map { " · plan \($0)" } ?? "")")
         } catch {
             print("ChatGPT error: \(error.localizedDescription)")
         }
         do {
             let claude = try await ClaudeQuotaService.fetch()
-            print("Claude weekly remaining: \(claude.remainingPercent)%")
+            print("Claude weekly remaining: \(claude.remainingPercent)%\(claude.plan.map { " · plan \($0)" } ?? "")")
             if let session = claude.session {
                 print("Claude 5-hour remaining: \(session.remainingPercent)%")
             }

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Show the current subscription plan next to each provider name in the menu (for example “ChatGPT · Pro Lite”, “Claude · Pro”), read from the ChatGPT/Codex app server’s plan type and the Claude credential’s subscription type.
+- Read the Claude keychain item by running `/usr/bin/security` — the same system tool Claude Code writes it with — instead of an in-process Keychain query, so macOS no longer shows a keychain password dialog on every refresh.
+- Treat a credential with `expiresAt: 0` as “unknown expiry” instead of “expired since 1970”, and treat a blanked keychain stub (empty tokens) as signed out; both patterns appear after Claude Code storage migrations.
+- Honor HTTP 429 `Retry-After` from the Claude usage endpoint: keep showing the last snapshot, skip refreshes until the announced time, and say so in the menu.
+- Explain unavailability in the menu with the concrete reason and fix — signed out (including the exact `claude` + `/login` command for Claude), expired credentials, rate limited (with the retry time), or a temporary error.
+- Also run the no-cost `claude` refresh probe when no credentials are readable at all, so the app self-heals after Claude Code moves its credential storage.
+- Recognize the local self-signed Quota Blocks code-signing identity during builds so reinstalling does not silently fall back to ad-hoc signing.
 - Read Claude Code’s file-based credentials (`~/.claude/.credentials.json`, primary since Claude Code 2.1) alongside the legacy Keychain item, and pick the freshest usable token.
 - When the stored Claude access token has expired, ask Claude Code to refresh itself with a no-cost `claude` CLI probe instead of reporting “signed out”; Quota Blocks still never refreshes or rewrites the shared rotating tokens.
 - Distinguish “credentials expired” from “not signed in”, and add a `--probe-credentials` diagnostic mode that reports credential sources and Security framework status codes without printing secrets.

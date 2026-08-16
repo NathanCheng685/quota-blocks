@@ -6,20 +6,29 @@ enum QuotaSelfTest {
     }
 
     static func run() throws {
-        let codexJSON = #"{"id":1,"result":{"rateLimits":{"primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1784566912}},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1784566912}}}}}"#
+        let codexJSON = #"{"id":1,"result":{"rateLimits":{"primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1784566912}},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1784566912},"planType":"prolite"}}}}"#
         guard let codex = try QuotaParsers.parseCodexLine(Data(codexJSON.utf8)) else {
             throw Failure.assertion("Codex response was not recognized")
         }
         try expect(codex.remainingPercent == 60, "Codex remaining percentage")
         try expect(codex.filledBlockCount == 3, "Codex block count")
+        try expect(codex.plan == "Pro Lite", "Codex plan display name")
 
         let claudeJSON = #"{"five_hour":{"utilization":33.0,"resets_at":"2026-07-14T22:20:00+00:00"},"seven_day":{"utilization":47.0,"resets_at":"2026-07-15T23:00:00.121498+00:00"},"limits":[{"percent":33,"kind":"session","group":"session","resets_at":"2026-07-14T22:20:00+00:00","scope":null},{"percent":47,"kind":"weekly_all","group":"weekly","resets_at":"2026-07-15T23:00:00+00:00","scope":null},{"percent":87,"kind":"weekly_scoped","group":"weekly","resets_at":"2026-07-15T23:00:00+00:00","scope":{"model":{"display_name":"Fable"}}}]}"#
-        let claude = try QuotaParsers.parseClaudeUsage(Data(claudeJSON.utf8))
+        let claude = try QuotaParsers.parseClaudeUsage(Data(claudeJSON.utf8), planName: "Pro")
         try expect(claude.remainingPercent == 53, "Claude remaining percentage")
         try expect(claude.filledBlockCount == 3, "Claude block count")
         try expect(claude.resetsAt != nil, "Claude reset date")
         try expect(claude.session?.remainingPercent == 67, "Claude session remaining percentage")
         try expect(claude.fable?.remainingPercent == 13, "Claude Fable remaining percentage")
+        try expect(claude.plan == "Pro", "Claude plan carried into the snapshot")
+
+        try expect(QuotaPlan.displayName("pro") == "Pro", "Known plan id maps to product name")
+        try expect(QuotaPlan.displayName("prolite") == "Pro Lite", "ChatGPT prolite plan display name")
+        try expect(QuotaPlan.displayName("max_5x") == "Max 5x", "Claude max_5x plan display name")
+        try expect(QuotaPlan.displayName("team_plus") == "Team Plus", "Unknown plan id is prettified")
+        try expect(QuotaPlan.displayName("  ") == nil, "Blank plan id yields no name")
+        try expect(QuotaPlan.displayName(nil) == nil, "Missing plan id yields no name")
 
         let now = Date(timeIntervalSince1970: 1_000)
         try expect(
@@ -37,8 +46,23 @@ enum QuotaSelfTest {
             "Claude valid token"
         )
         try expect(
+            !ClaudeCredentialStore.needsRefresh(
+                expiresAtMilliseconds: 0,
+                now: now
+            ),
+            "expiresAt 0 means unknown expiry, not expired"
+        )
+        try expect(
             QuotaError.requestFailed("rate limited").isTemporary,
             "Temporary request failure"
+        )
+        try expect(
+            QuotaError.rateLimited("Claude", until: nil).isTemporary,
+            "Rate limiting is temporary"
+        )
+        try expect(
+            QuotaError.rateLimited("Claude", until: now).failureKind == .rateLimited(until: now),
+            "Rate limit failure kind carries the retry date"
         )
         try expect(
             !QuotaError.notSignedIn("Claude").isTemporary,
@@ -47,6 +71,53 @@ enum QuotaSelfTest {
         try expect(
             !QuotaError.credentialsExpired("Claude").isTemporary,
             "Expired credentials are not temporary"
+        )
+        try expect(
+            QuotaError.notSignedIn("Claude").failureKind == .notSignedIn,
+            "Signed-out failure kind"
+        )
+
+        try expect(
+            ClaudeQuotaService.rateLimitBlockInterval(retryAfterSeconds: nil) == 300,
+            "Missing Retry-After falls back to five minutes"
+        )
+        try expect(
+            ClaudeQuotaService.rateLimitBlockInterval(retryAfterSeconds: 1_142) == 1_142,
+            "Retry-After within bounds is honored"
+        )
+        try expect(
+            ClaudeQuotaService.rateLimitBlockInterval(retryAfterSeconds: 5) == 60,
+            "Tiny Retry-After is clamped up"
+        )
+        try expect(
+            ClaudeQuotaService.rateLimitBlockInterval(retryAfterSeconds: 90_000) == 3_600,
+            "Huge Retry-After is clamped down"
+        )
+
+        let stubJSON = #"{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"subscriptionType":"pro"}}"#
+        try expect(
+            ClaudeCredentialStore.parseCredentials(Data(stubJSON.utf8)) == nil,
+            "Blanked keychain stub yields no credentials"
+        )
+        let zeroExpiryJSON = #"{"claudeAiOauth":{"accessToken":"token-1","expiresAt":0,"subscriptionType":"max"}}"#
+        let zeroExpiry = ClaudeCredentialStore.parseCredentials(Data(zeroExpiryJSON.utf8))
+        try expect(zeroExpiry?.accessToken == "token-1", "Zero expiry token is kept")
+        try expect(zeroExpiry?.expiresAtMilliseconds == nil, "Zero expiry becomes unknown expiry")
+        try expect(zeroExpiry?.subscriptionType == "max", "Subscription type is parsed")
+
+        let jsonPayload = Data(#"{"claudeAiOauth":{"accessToken":"a"}}"#.utf8)
+        try expect(
+            ClaudeCredentialStore.decodeSecurityPayload(jsonPayload) == jsonPayload,
+            "Plain JSON security output passes through"
+        )
+        let hexPayload = Data(jsonPayload.map { String(format: "%02x", $0) }.joined().utf8)
+        try expect(
+            ClaudeCredentialStore.decodeSecurityPayload(hexPayload) == jsonPayload,
+            "Hex security output is decoded"
+        )
+        try expect(
+            ClaudeCredentialStore.decodeSecurityPayload(Data("\n".utf8)) == nil,
+            "Whitespace-only security output yields nothing"
         )
 
         let selectionNow = Date(timeIntervalSince1970: 10_000)
@@ -67,31 +138,31 @@ enum QuotaSelfTest {
             expiresAtMilliseconds: nil
         )
         try expect(
-            ClaudeCredentialStore.usableToken(
+            ClaudeCredentialStore.usableCredentials(
                 from: [expiredToken, freshToken],
                 rejectedToken: nil,
                 now: selectionNow
-            ) == "fresh-token",
+            )?.accessToken == "fresh-token",
             "Fresh token wins over an expired one"
         )
         try expect(
-            ClaudeCredentialStore.usableToken(
+            ClaudeCredentialStore.usableCredentials(
                 from: [freshToken, fresherToken],
                 rejectedToken: nil,
                 now: selectionNow
-            ) == "fresher-token",
+            )?.accessToken == "fresher-token",
             "Latest expiry wins between usable tokens"
         )
         try expect(
-            ClaudeCredentialStore.usableToken(
+            ClaudeCredentialStore.usableCredentials(
                 from: [freshToken, eternalToken],
                 rejectedToken: nil,
                 now: selectionNow
-            ) == "eternal-token",
+            )?.accessToken == "eternal-token",
             "Token without expiry counts as farthest expiry"
         )
         try expect(
-            ClaudeCredentialStore.usableToken(
+            ClaudeCredentialStore.usableCredentials(
                 from: [expiredToken],
                 rejectedToken: nil,
                 now: selectionNow
@@ -99,7 +170,7 @@ enum QuotaSelfTest {
             "Expired-only credentials yield no usable token"
         )
         try expect(
-            ClaudeCredentialStore.usableToken(
+            ClaudeCredentialStore.usableCredentials(
                 from: [freshToken],
                 rejectedToken: "fresh-token",
                 now: selectionNow
@@ -107,12 +178,12 @@ enum QuotaSelfTest {
             "Server-rejected token is not reused"
         )
         try expect(
-            ClaudeCredentialStore.usableToken(
+            ClaudeCredentialStore.usableCredentials(
                 from: [expiredToken],
                 rejectedToken: nil,
                 now: Date(timeIntervalSince1970: 8_999),
                 leeway: 0
-            ) == "expired-token",
+            )?.accessToken == "expired-token",
             "Zero leeway accepts a not-yet-expired token"
         )
 

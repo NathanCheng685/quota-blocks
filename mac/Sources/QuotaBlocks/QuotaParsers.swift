@@ -34,11 +34,12 @@ enum QuotaParsers {
         return QuotaSnapshot(
             provider: .chatGPT,
             usedPercent: max(0, min(100, used)),
-            resetsAt: resetTimestamp.map(Date.init(timeIntervalSince1970:))
+            resetsAt: resetTimestamp.map(Date.init(timeIntervalSince1970:)),
+            plan: QuotaPlan.displayName(limits["planType"] as? String)
         )
     }
 
-    static func parseClaudeUsage(_ data: Data) throws -> QuotaSnapshot {
+    static func parseClaudeUsage(_ data: Data, planName: String? = nil) throws -> QuotaSnapshot {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw QuotaError.invalidResponse("Claude")
         }
@@ -70,7 +71,8 @@ enum QuotaParsers {
             usedPercent: weekly.usedPercent,
             resetsAt: weekly.resetsAt,
             session: session,
-            fable: fable
+            fable: fable,
+            plan: planName
         )
     }
 
