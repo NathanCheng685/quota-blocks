@@ -25,7 +25,11 @@ fi
 # (the previous behaviour) when the identity is absent, so CI/other machines
 # still build. Create the identity once with scripts/setup-signing-identity.sh.
 SIGN_IDENTITY="${QUOTABLOCKS_SIGN_IDENTITY:-QuotaBlocks Local Signing}"
-if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$SIGN_IDENTITY"; then
+# `-v` filters out self-signed identities that are intentionally not trusted
+# as certificate authorities. They are still valid local code-signing
+# identities, so search all code-signing matches and let `codesign` verify
+# private-key access.
+if security find-identity -p codesigning 2>/dev/null | grep -qF "\"$SIGN_IDENTITY\""; then
     echo "Signing with stable identity: $SIGN_IDENTITY"
     codesign --force --deep --sign "$SIGN_IDENTITY" "$APP"
 else
