@@ -2,13 +2,13 @@
 
 A compact, native macOS menu bar app for seeing your remaining ChatGPT/Codex and Claude subscription quotas at a glance.
 
-The menu bar item uses two compact rows and automatically adjusts between roughly 73–78 pt wide so percentages are never compressed. Each row contains a provider icon, five small blocks, and the remaining weekly percentage. Click it for your current plan next to each provider name (for example “ChatGPT · Pro” or “Claude · Max”), reset dates with weekdays, and Claude’s 5-hour, weekly, and Fable limits. When a provider cannot be read, the menu says exactly why — signed out (with the command that fixes it), expired credentials, or a temporarily rate-limited endpoint. The menu can switch between English and Chinese and control whether Quota Blocks launches at login.
+The menu bar item uses two compact rows and automatically adjusts between roughly 73–78 pt wide so percentages are never compressed. Each row contains a provider icon, five small blocks, and the remaining weekly percentage. Click it for your current plan next to each provider name (for example “ChatGPT · Pro” or “Claude · Max”), reset dates with weekdays, the 5-hour session and weekly limits for both providers, and Claude’s Fable limit. When a provider cannot be read, the menu says exactly why — signed out (with the command that fixes it), expired credentials, or a temporarily rate-limited endpoint. The menu can switch between English and Chinese and control whether Quota Blocks launches at login.
 
 > Quota Blocks is an independent, unofficial open-source project. It is not affiliated with, endorsed by, or sponsored by OpenAI or Anthropic.
 
 ## What it reads
 
-- **ChatGPT/Codex:** the seven-day rate-limit window exposed by the locally installed ChatGPT or Codex app server.
+- **ChatGPT/Codex:** the five-hour session and seven-day rate-limit windows exposed by the locally installed ChatGPT or Codex app server.
 - **Claude:** the local Claude Code OAuth session and Anthropic’s usage endpoint, including the 5-hour session, weekly all-models limit, and Fable limit when present. Claude Code has stored its session in the login keychain (2.0, 2.2+) and in `~/.claude/.credentials.json` (2.1); Quota Blocks reads both and uses the freshest usable token. The keychain item is read by running `/usr/bin/security` — the same system tool Claude Code writes it with — so macOS never shows a keychain password dialog for Quota Blocks. Quota Blocks treats these credentials as strictly read-only; Claude Code remains responsible for login and token refresh. When the stored access token has expired or gone missing, Quota Blocks runs your own `claude` CLI once with a deliberately invalid model name — Claude Code refreshes its own session first and the request fails before consuming any quota — then simply re-reads what Claude Code wrote.
 - The plan shown next to each provider comes from the same local data: the ChatGPT/Codex app server reports its plan type, and the Claude credential records the subscription type.
 - Percentages always mean **remaining quota**, not used quota.
@@ -48,7 +48,7 @@ swift run QuotaBlocks --self-test
 
 Quota Blocks 是一个原生 macOS 菜单栏小应用，用两行紧凑信息同时显示 ChatGPT／Codex 与 Claude 的剩余额度。
 
-每行包含服务图标、5 个小额度块和周剩余百分比。点击后可以在 ChatGPT／Claude 名称右侧看到当前订阅方案（例如「ChatGPT · Pro」「Claude · Max」），并查看包含星期的完整重置日期，以及 Claude 的 5 小时、周额度和 Fable 限额；无法读取时菜单会直接说明原因（未登录时附带修复命令、凭据过期或接口临时限流）。菜单支持中英文切换和开机自动启动开关。
+每行包含服务图标、5 个小额度块和周剩余百分比。点击后可以在 ChatGPT／Claude 名称右侧看到当前订阅方案（例如「ChatGPT · Pro」「Claude · Max」），并查看包含星期的完整重置日期，以及 ChatGPT 和 Claude 的 5 小时、周额度与 Claude 的 Fable 限额；无法读取时菜单会直接说明原因（未登录时附带修复命令、凭据过期或接口临时限流）。菜单支持中英文切换和开机自动启动开关。
 
 安装前请先登录 ChatGPT／Codex 与 Claude Code，然后运行：
 

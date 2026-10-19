@@ -30,11 +30,23 @@ enum QuotaParsers {
             throw QuotaError.invalidResponse("ChatGPT")
         }
 
+        let session = [primary, secondary]
+            .compactMap { $0 as [String: Any]? }
+            .first { ($0["windowDurationMins"] as? NSNumber)?.intValue == 5 * 60 }
+            .flatMap { value -> QuotaWindow? in
+                guard let used = (value["usedPercent"] as? NSNumber)?.intValue else { return nil }
+                return QuotaWindow(
+                    usedPercent: max(0, min(100, used)),
+                    resetsAt: ((value["resetsAt"] as? NSNumber)?.doubleValue).map(Date.init(timeIntervalSince1970:))
+                )
+            }
+
         let resetTimestamp = (weekly["resetsAt"] as? NSNumber)?.doubleValue
         return QuotaSnapshot(
             provider: .chatGPT,
             usedPercent: max(0, min(100, used)),
             resetsAt: resetTimestamp.map(Date.init(timeIntervalSince1970:)),
+            session: session,
             plan: QuotaPlan.displayName(limits["planType"] as? String)
         )
     }

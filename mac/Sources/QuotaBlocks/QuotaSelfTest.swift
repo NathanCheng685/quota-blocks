@@ -12,7 +12,28 @@ enum QuotaSelfTest {
         }
         try expect(codex.remainingPercent == 60, "Codex remaining percentage")
         try expect(codex.filledBlockCount == 3, "Codex block count")
-        try expect(codex.plan == "Pro Lite", "Codex plan display name")
+        try expect(codex.plan == "Pro 100", "Codex plan display name")
+
+        try expect(codex.session == nil, "Weekly-only response has no session")
+        for useByID in [false, true] {
+            for swapWindows in [false, true] {
+                let session: [String: Any] = ["usedPercent": 23, "windowDurationMins": 300, "resetsAt": 1784000000]
+                let weekly: [String: Any] = ["usedPercent": 40, "windowDurationMins": 10080, "resetsAt": 1784566912]
+                let limits: [String: Any] = ["primary": swapWindows ? weekly : session, "secondary": swapWindows ? session : weekly]
+                let result: [String: Any] = useByID
+                    ? ["rateLimitsByLimitId": ["codex": limits], "rateLimits": ["primary": weekly]]
+                    : ["rateLimits": limits]
+                let data = try JSONSerialization.data(withJSONObject: ["id": 1, "result": result])
+                let snapshot = try QuotaParsers.parseCodexLine(data)
+                try expect(snapshot?.remainingPercent == 60, "Weekly quota stays independent of session")
+                try expect(snapshot?.session?.remainingPercent == 77, "Session read from either response format and window order")
+                try expect(snapshot?.session?.resetsAt == Date(timeIntervalSince1970: 1784000000), "Session uses its own reset date")
+            }
+        }
+        let missingSessionUsage = #"{"id":1,"result":{"rateLimits":{"primary":{"windowDurationMins":300},"secondary":{"usedPercent":40,"windowDurationMins":10080}}}}"#
+        let incomplete = try QuotaParsers.parseCodexLine(Data(missingSessionUsage.utf8))
+        try expect(incomplete?.session == nil, "Missing session usage is not reported as zero")
+        try expect(incomplete?.remainingPercent == 60, "Missing session usage preserves weekly quota")
 
         let claudeJSON = #"{"five_hour":{"utilization":33.0,"resets_at":"2026-07-14T22:20:00+00:00"},"seven_day":{"utilization":47.0,"resets_at":"2026-07-15T23:00:00.121498+00:00"},"limits":[{"percent":33,"kind":"session","group":"session","resets_at":"2026-07-14T22:20:00+00:00","scope":null},{"percent":47,"kind":"weekly_all","group":"weekly","resets_at":"2026-07-15T23:00:00+00:00","scope":null},{"percent":87,"kind":"weekly_scoped","group":"weekly","resets_at":"2026-07-15T23:00:00+00:00","scope":{"model":{"display_name":"Fable"}}}]}"#
         let claude = try QuotaParsers.parseClaudeUsage(Data(claudeJSON.utf8), planName: "Pro")
@@ -24,7 +45,7 @@ enum QuotaSelfTest {
         try expect(claude.plan == "Pro", "Claude plan carried into the snapshot")
 
         try expect(QuotaPlan.displayName("pro") == "Pro", "Known plan id maps to product name")
-        try expect(QuotaPlan.displayName("prolite") == "Pro Lite", "ChatGPT prolite plan display name")
+        try expect(QuotaPlan.displayName("prolite") == "Pro 100", "ChatGPT prolite plan display name")
         try expect(QuotaPlan.displayName("max_5x") == "Max 5x", "Claude max_5x plan display name")
         try expect(QuotaPlan.displayName("team_plus") == "Team Plus", "Unknown plan id is prettified")
         try expect(QuotaPlan.displayName("  ") == nil, "Blank plan id yields no name")

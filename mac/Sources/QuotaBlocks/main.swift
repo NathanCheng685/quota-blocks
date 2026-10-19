@@ -38,6 +38,9 @@ if CommandLine.arguments.contains("--probe-live") {
         do {
             let chatGPT = try await ChatGPTQuotaService.fetch()
             print("ChatGPT remaining: \(chatGPT.remainingPercent)%\(chatGPT.plan.map { " · plan \($0)" } ?? "")")
+            if let session = chatGPT.session {
+                print("ChatGPT 5-hour remaining: \(session.remainingPercent)% · resets \(session.resetsAt?.description ?? "unknown")")
+            }
         } catch {
             print("ChatGPT error: \(error.localizedDescription)")
         }

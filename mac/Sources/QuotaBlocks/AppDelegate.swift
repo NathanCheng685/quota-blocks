@@ -129,16 +129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .loading:
             menu.addItem(disabledItem("  \(text("正在读取…", "Loading…"))"))
         case let .available(snapshot):
-            if provider == .claude {
-                if let session = snapshot.session {
-                    menu.addItem(windowItem(label: text("5 小时", "5-hour session"), window: session))
-                }
-                menu.addItem(windowItem(label: text("周额度", "Weekly"), window: snapshot.weekly))
-                if let fable = snapshot.fable {
-                    menu.addItem(windowItem(label: "Fable", window: fable))
-                }
-            } else {
-                menu.addItem(windowItem(label: text("周额度", "Weekly"), window: snapshot.weekly))
+            if let session = snapshot.session {
+                menu.addItem(windowItem(label: text("5 小时", "5-hour session"), window: session))
+            }
+            menu.addItem(windowItem(label: text("周额度", "Weekly"), window: snapshot.weekly))
+            if let fable = snapshot.fable {
+                menu.addItem(windowItem(label: "Fable", window: fable))
             }
         case let .unavailable(failure):
             menu.addItem(disabledItem("  \(failureText(failure, provider: provider))"))

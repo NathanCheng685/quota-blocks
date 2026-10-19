@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Show the current subscription plan next to each provider name in the menu (for example “ChatGPT · Pro Lite”, “Claude · Pro”), read from the ChatGPT/Codex app server’s plan type and the Claude credential’s subscription type.
+- Show the ChatGPT/Codex 5-hour session window in the menu alongside the weekly limit whenever the app server reports one, with its own reset date.
+- Show the current subscription plan next to each provider name in the menu (for example “ChatGPT · Pro 100”, “Claude · Max”), read from the ChatGPT/Codex app server’s plan type and the Claude credential’s subscription type.
 - Read the Claude keychain item by running `/usr/bin/security` — the same system tool Claude Code writes it with — instead of an in-process Keychain query, so macOS no longer shows a keychain password dialog on every refresh.
 - Treat a credential with `expiresAt: 0` as “unknown expiry” instead of “expired since 1970”, and treat a blanked keychain stub (empty tokens) as signed out; both patterns appear after Claude Code storage migrations.
 - Honor HTTP 429 `Retry-After` from the Claude usage endpoint: keep showing the last snapshot, skip refreshes until the announced time, and say so in the menu.
