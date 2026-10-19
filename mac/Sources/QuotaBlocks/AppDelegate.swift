@@ -136,6 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let fable = snapshot.fable {
                 menu.addItem(windowItem(label: "Fable", window: fable))
             }
+            for grant in snapshot.resetGrants {
+                menu.addItem(resetGrantItem(grant))
+            }
         case let .unavailable(failure):
             menu.addItem(disabledItem("  \(failureText(failure, provider: provider))"))
         }
@@ -172,6 +175,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func windowItem(label: String, window: QuotaWindow) -> NSMenuItem {
         let resetText = window.resetsAt.map { " · \(text("重置", "resets")) \(formatResetDate($0))" } ?? ""
         return disabledItem("  \(label) · \(text("剩余", "remaining")) \(window.remainingPercent)%\(resetText)")
+    }
+
+    private func resetGrantItem(_ grant: QuotaResetGrant) -> NSMenuItem {
+        let deadline = grant.endsAt.map {
+            " · \(text("\(formatResetDate($0)) 前可用", "use by \(formatResetDate($0))"))"
+        } ?? ""
+        let item = disabledItem(
+            "  \(text("重置机会", "Limit reset")) · \(text("剩 \(grant.resetsLeft) 次", "\(grant.resetsLeft) left"))\(deadline)"
+        )
+        if !grant.label.isEmpty {
+            item.toolTip = grant.label
+        }
+        return item
     }
 
     private func disabledItem(_ title: String) -> NSMenuItem {

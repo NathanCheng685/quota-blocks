@@ -58,12 +58,22 @@ struct QuotaWindow: Sendable, Equatable {
     }
 }
 
+/// A one-off limit reset Anthropic has granted the account, such as a model
+/// launch promotion. Quota Blocks only reports it; spending it stays in
+/// Claude Code (`/limit-reset`).
+struct QuotaResetGrant: Sendable, Equatable {
+    let label: String
+    let resetsLeft: Int
+    let endsAt: Date?
+}
+
 struct QuotaSnapshot: Sendable, Equatable {
     let provider: QuotaProvider
     let plan: String?
     let weekly: QuotaWindow
     let session: QuotaWindow?
     let fable: QuotaWindow?
+    let resetGrants: [QuotaResetGrant]
 
     init(
         provider: QuotaProvider,
@@ -71,13 +81,15 @@ struct QuotaSnapshot: Sendable, Equatable {
         resetsAt: Date?,
         session: QuotaWindow? = nil,
         fable: QuotaWindow? = nil,
-        plan: String? = nil
+        plan: String? = nil,
+        resetGrants: [QuotaResetGrant] = []
     ) {
         self.provider = provider
         self.plan = plan
         weekly = QuotaWindow(usedPercent: usedPercent, resetsAt: resetsAt)
         self.session = session
         self.fable = fable
+        self.resetGrants = resetGrants
     }
 
     var usedPercent: Int { weekly.usedPercent }

@@ -43,6 +43,27 @@ enum QuotaSelfTest {
         try expect(claude.session?.remainingPercent == 67, "Claude session remaining percentage")
         try expect(claude.fable?.remainingPercent == 13, "Claude Fable remaining percentage")
         try expect(claude.plan == "Pro", "Claude plan carried into the snapshot")
+        try expect(claude.resetGrants.isEmpty, "No cedar_ember block means no limit resets")
+
+        let grantNow = try expectDate("2026-10-19T06:00:00Z")
+        let resetJSON = #"{"seven_day":{"utilization":5.0,"resets_at":"2026-10-23T17:00:00+00:00"},"cedar_ember":{"eligible":true,"ineligible_reason":null,"at_limit":false,"grants":[{"id":"opus55-launch-promax-20260921","label":"Claude Opus 5.5 launch: one usage-limit reset for Pro and Max","resets_total":1,"resets_left":1,"starts_at":"2026-09-22T16:00:00+00:00","ends_at":"2026-10-22T16:00:00+00:00","clears":["five_hour","seven_day","seven_day_overage_included"],"paused":false,"usable_now":true,"use_requires_limit":false},{"id":"spent","resets_left":0,"ends_at":"2026-12-01T00:00:00+00:00","clears":["five_hour"]},{"id":"ended","resets_left":1,"ends_at":"2026-10-01T00:00:00+00:00","clears":["five_hour"]},{"id":"paused","resets_left":1,"paused":true,"clears":["five_hour"]},{"id":"no-deadline","resets_left":2,"clears":["five_hour"]}]}}"#
+        let withResets = try QuotaParsers.parseClaudeUsage(Data(resetJSON.utf8), now: grantNow)
+        try expect(withResets.resetGrants.count == 2, "Spent, ended and paused resets are left out")
+        let launch = withResets.resetGrants.first
+        try expect(launch?.resetsLeft == 1, "Reset count read from the grant")
+        let launchDeadline = try expectDate("2026-10-22T16:00:00Z")
+        try expect(launch?.endsAt == launchDeadline, "Reset deadline read from the grant")
+        try expect(launch?.label.hasPrefix("Claude Opus 5.5 launch") == true, "Reset label kept for the tooltip")
+        let noDeadline = withResets.resetGrants.last
+        try expect(noDeadline?.resetsLeft == 2 && noDeadline?.endsAt == nil, "Reset without a deadline is kept")
+        let ineligible = #"{"seven_day":{"utilization":5.0},"cedar_ember":{"eligible":false,"ineligible_reason":"surface","grants":[{"id":"x","resets_left":1}]}}"#
+        let ineligibleSnapshot = try QuotaParsers.parseClaudeUsage(Data(ineligible.utf8))
+        try expect(ineligibleSnapshot.resetGrants.isEmpty, "Ineligible client shows no resets")
+
+        try expect(ClaudeCodeVersion.isVersion("2.1.303"), "Native install version directory recognized")
+        try expect(!ClaudeCodeVersion.isVersion("claude"), "Plain binary name is not a version")
+        try expect(ClaudeCodeVersion.parseVersionOutput("2.1.303 (Claude Code)\n") == "2.1.303", "claude --version output parsed")
+        try expect(ClaudeCodeVersion.parseVersionOutput("error: unknown") == nil, "Unexpected --version output ignored")
 
         try expect(QuotaPlan.displayName("pro") == "Pro", "Known plan id maps to product name")
         try expect(QuotaPlan.displayName("prolite") == "Pro 100", "ChatGPT prolite plan display name")
@@ -239,5 +260,12 @@ enum QuotaSelfTest {
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ name: String) throws {
         guard condition() else { throw Failure.assertion(name) }
+    }
+
+    private static func expectDate(_ value: String) throws -> Date {
+        guard let date = ISO8601DateFormatter().date(from: value) else {
+            throw Failure.assertion("Test date \(value) parses")
+        }
+        return date
     }
 }

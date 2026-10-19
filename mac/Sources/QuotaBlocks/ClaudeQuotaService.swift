@@ -1,7 +1,9 @@
 import Foundation
 
 enum ClaudeQuotaService {
-    private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    // `cedar_ember=1` adds the account's limit-reset grants to the usual
+    // windows; `skip_spend=1` leaves out the usage-credit block we never show.
+    private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1")!
     private static let credentialStore = ClaudeCredentialStore()
     private static let rateLimitGate = QuotaRateLimitGate()
     private static let session: URLSession = {
@@ -46,7 +48,7 @@ enum ClaudeQuotaService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        request.setValue("claude-code/2.1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue(ClaudeCodeVersion.userAgent(), forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -79,6 +81,83 @@ enum ClaudeQuotaService {
 
 private enum ClaudeRequestError: Error {
     case unauthorized
+}
+
+/// Identifies requests as the Claude Code CLI the user has installed. The
+/// usage endpoint only reports limit-reset grants to a recent CLI and
+/// answers older or unknown clients with "not eligible", so a fixed version
+/// string would silently stop showing them after the next server update.
+enum ClaudeCodeVersion {
+    static let fallbackUserAgent = "claude-code/2.1.0"
+    private static let cache = Cache()
+
+    static func userAgent() -> String {
+        guard let version = installed() else { return fallbackUserAgent }
+        return "claude-cli/\(version) (external, cli)"
+    }
+
+    static func installed() -> String? {
+        guard let binary = ClaudeCodeRefreshTrigger.locateClaudeBinary() else { return nil }
+        // The native installer links ~/.local/bin/claude to
+        // ~/.local/share/claude/versions/<version>, so the version is free.
+        let target = binary.resolvingSymlinksInPath().lastPathComponent
+        if isVersion(target) { return target }
+        return cache.version(for: binary.path) { reportedVersion(of: binary) }
+    }
+
+    static func isVersion(_ value: String) -> Bool {
+        value.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil
+    }
+
+    /// Other installs (npm, Homebrew) only say it through `claude --version`,
+    /// which prints for example "2.1.303 (Claude Code)".
+    static func parseVersionOutput(_ output: String) -> String? {
+        let first = output.split(whereSeparator: \.isWhitespace).first.map(String.init)
+        return first.flatMap { isVersion($0) ? $0 : nil }
+    }
+
+    private static func reportedVersion(of binary: URL) -> String? {
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = ["--version"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let deadline = Date().addingTimeInterval(10)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        if process.isRunning {
+            process.terminate()
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        return parseVersionOutput(String(decoding: data, as: UTF8.self))
+    }
+
+    /// Runs `claude --version` at most every few hours instead of on every
+    /// two-minute refresh; Claude Code updates itself far less often.
+    private final class Cache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [String: (version: String?, checkedAt: Date)] = [:]
+        private let lifetime: TimeInterval = 6 * 60 * 60
+
+        func version(for path: String, resolve: () -> String?) -> String? {
+            lock.lock()
+            if let entry = entries[path], Date().timeIntervalSince(entry.checkedAt) < lifetime {
+                lock.unlock()
+                return entry.version
+            }
+            lock.unlock()
+            let version = resolve()
+            lock.lock()
+            entries[path] = (version, Date())
+            lock.unlock()
+            return version
+        }
+    }
 }
 
 /// Remembers a server-side rate limit so scheduled refreshes skip the network

@@ -53,6 +53,13 @@ if CommandLine.arguments.contains("--probe-live") {
             if let fable = claude.fable {
                 print("Claude Fable remaining: \(fable.remainingPercent)%")
             }
+            print("Claude Code version for usage requests: \(ClaudeCodeVersion.installed() ?? "unknown")")
+            if claude.resetGrants.isEmpty {
+                print("Claude limit resets: none")
+            }
+            for grant in claude.resetGrants {
+                print("Claude limit reset: \(grant.resetsLeft) left · until \(grant.endsAt?.description ?? "no deadline") · \(grant.label)")
+            }
         } catch {
             print("Claude error: \(error.localizedDescription)")
         }

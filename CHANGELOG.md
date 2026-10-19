@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show Claude limit resets granted to the account (for example the Claude Opus 5.5 launch reset): how many are left and the deadline, with the grant name as a tooltip. Quota Blocks only displays them; spending one stays a `/limit-reset` in Claude Code. The usage request now identifies itself with the installed Claude Code version, since Anthropic only reports resets to a recent CLI.
 - Show the ChatGPT/Codex 5-hour session window in the menu alongside the weekly limit whenever the app server reports one, with its own reset date.
 - Show the current subscription plan next to each provider name in the menu (for example “ChatGPT · Pro 100”, “Claude · Max”), read from the ChatGPT/Codex app server’s plan type and the Claude credential’s subscription type.
 - Read the Claude keychain item by running `/usr/bin/security` — the same system tool Claude Code writes it with — instead of an in-process Keychain query, so macOS no longer shows a keychain password dialog on every refresh.

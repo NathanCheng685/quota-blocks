@@ -51,7 +51,11 @@ enum QuotaParsers {
         )
     }
 
-    static func parseClaudeUsage(_ data: Data, planName: String? = nil) throws -> QuotaSnapshot {
+    static func parseClaudeUsage(
+        _ data: Data,
+        planName: String? = nil,
+        now: Date = Date()
+    ) throws -> QuotaSnapshot {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw QuotaError.invalidResponse("Claude")
         }
@@ -84,8 +88,30 @@ enum QuotaParsers {
             resetsAt: weekly.resetsAt,
             session: session,
             fable: fable,
-            plan: planName
+            plan: planName,
+            resetGrants: resetGrants(from: root["cedar_ember"] as? [String: Any], now: now)
         )
+    }
+
+    /// Limit resets granted to the account. The server only fills these in
+    /// for an eligible client; anything paused, spent or past its deadline is
+    /// left out so the menu never offers a reset that cannot be used.
+    static func resetGrants(from status: [String: Any]?, now: Date) -> [QuotaResetGrant] {
+        guard let status, status["eligible"] as? Bool == true else { return [] }
+        let grants = status["grants"] as? [[String: Any]] ?? []
+        return grants.compactMap { grant in
+            guard
+                let left = (grant["resets_left"] as? NSNumber)?.intValue, left > 0,
+                grant["paused"] as? Bool != true
+            else { return nil }
+            let endsAt = (grant["ends_at"] as? String).flatMap(parseISO8601)
+            if let endsAt, endsAt <= now { return nil }
+            return QuotaResetGrant(
+                label: grant["label"] as? String ?? "",
+                resetsLeft: left,
+                endsAt: endsAt
+            )
+        }
     }
 
     private static func window(fromLimit value: [String: Any]?) -> QuotaWindow? {
