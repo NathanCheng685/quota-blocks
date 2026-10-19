@@ -4,6 +4,8 @@ enum ClaudeQuotaService {
     // `cedar_ember=1` adds the account's limit-reset grants to the usual
     // windows; `skip_spend=1` leaves out the usage-credit block we never show.
     private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1")!
+    private static let profileURL = URL(string: "https://api.anthropic.com/api/oauth/profile")!
+    private static let planCache = ClaudePlanCache()
     private static let credentialStore = ClaudeCredentialStore()
     private static let rateLimitGate = QuotaRateLimitGate()
     private static let session: URLSession = {
@@ -37,10 +39,11 @@ enum ClaudeQuotaService {
         await credentialStore.diagnostics()
     }
 
-    private static func fetchUsage(
+    private static func request(
+        _ url: URL,
         with grant: ClaudeCredentialStore.TokenGrant
-    ) async throws -> QuotaSnapshot {
-        var request = URLRequest(url: usageURL)
+    ) -> URLRequest {
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 20
@@ -49,14 +52,20 @@ enum ClaudeQuotaService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue(ClaudeCodeVersion.userAgent(), forHTTPHeaderField: "User-Agent")
+        return request
+    }
 
-        let (data, response) = try await session.data(for: request)
+    private static func fetchUsage(
+        with grant: ClaudeCredentialStore.TokenGrant
+    ) async throws -> QuotaSnapshot {
+        let (data, response) = try await session.data(for: request(usageURL, with: grant))
         guard let http = response as? HTTPURLResponse else {
             throw QuotaError.requestFailed("Claude 网络响应无效。")
         }
         switch http.statusCode {
         case 200:
-            return try QuotaParsers.parseClaudeUsage(data, planName: grant.planName)
+            let plan = await planName(with: grant) ?? grant.planName
+            return try QuotaParsers.parseClaudeUsage(data, planName: plan)
         case 401, 403:
             throw ClaudeRequestError.unauthorized
         case 429:
@@ -72,6 +81,25 @@ enum ClaudeQuotaService {
         default:
             throw QuotaError.requestFailed("Claude 额度读取失败（HTTP \(http.statusCode)）。")
         }
+    }
+
+    /// The credential only records "pro" or "max", and that value can lag
+    /// behind the subscription. The account profile names the exact plan,
+    /// the way Claude Code's own status line does: the server's display name
+    /// when it sends one, otherwise the rate-limit tier ("Max 5x").
+    private static func planName(
+        with grant: ClaudeCredentialStore.TokenGrant
+    ) async -> String? {
+        if let cached = await planCache.cachedPlan() {
+            return cached
+        }
+        guard
+            let (data, response) = try? await session.data(for: request(profileURL, with: grant)),
+            (response as? HTTPURLResponse)?.statusCode == 200,
+            let plan = QuotaParsers.parseClaudeProfilePlan(data)
+        else { return await planCache.stalePlan() }
+        await planCache.store(plan)
+        return plan
     }
 
     static func rateLimitBlockInterval(retryAfterSeconds: TimeInterval?) -> TimeInterval {
@@ -157,6 +185,26 @@ enum ClaudeCodeVersion {
             lock.unlock()
             return version
         }
+    }
+}
+
+/// Plans change rarely, so the profile is read at most every few hours; a
+/// failed read keeps showing the last plan it found.
+actor ClaudePlanCache {
+    private static let lifetime: TimeInterval = 6 * 60 * 60
+    private var plan: String?
+    private var fetchedAt: Date?
+
+    func cachedPlan(now: Date = Date()) -> String? {
+        guard let fetchedAt, now.timeIntervalSince(fetchedAt) < Self.lifetime else { return nil }
+        return plan
+    }
+
+    func stalePlan() -> String? { plan }
+
+    func store(_ plan: String, now: Date = Date()) {
+        self.plan = plan
+        fetchedAt = now
     }
 }
 

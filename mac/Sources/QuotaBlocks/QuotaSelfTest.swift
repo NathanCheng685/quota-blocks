@@ -60,6 +60,18 @@ enum QuotaSelfTest {
         let ineligibleSnapshot = try QuotaParsers.parseClaudeUsage(Data(ineligible.utf8))
         try expect(ineligibleSnapshot.resetGrants.isEmpty, "Ineligible client shows no resets")
 
+        func profilePlan(_ organization: String) -> String? {
+            QuotaParsers.parseClaudeProfilePlan(Data(#"{"account":{},"organization":\#(organization)}"#.utf8))
+        }
+        try expect(profilePlan(#"{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_5x","plan_display_name":null}"#) == "Max 5x", "Max 5x tier named from the profile")
+        try expect(profilePlan(#"{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_20x"}"#) == "Max 20x", "Max 20x tier named from the profile")
+        try expect(profilePlan(#"{"organization_type":"claude_pro","rate_limit_tier":"default_claude_ai","plan_display_name":"Pro 100"}"#) == "Pro 100", "Server display name wins")
+        try expect(profilePlan(#"{"organization_type":"claude_pro","plan_display_name":"Claude Pro 100"}"#) == "Pro 100", "Claude prefix dropped from the display name")
+        try expect(profilePlan(#"{"organization_type":"claude_pro","rate_limit_tier":"default_claude_ai"}"#) == "Pro", "Plain Pro from the organization type")
+        try expect(profilePlan(#"{"organization_type":"claude_team","rate_limit_tier":"default_claude_max_5x"}"#) == "Team", "Team seat tier is not shown as Max")
+        try expect(profilePlan(#"{"organization_type":"api_individual"}"#) == nil, "Non-subscription profile yields no plan")
+        try expect(QuotaParsers.parseClaudeProfilePlan(Data("not json".utf8)) == nil, "Unreadable profile yields no plan")
+
         try expect(ClaudeCodeVersion.isVersion("2.1.303"), "Native install version directory recognized")
         try expect(!ClaudeCodeVersion.isVersion("claude"), "Plain binary name is not a version")
         try expect(ClaudeCodeVersion.parseVersionOutput("2.1.303 (Claude Code)\n") == "2.1.303", "claude --version output parsed")

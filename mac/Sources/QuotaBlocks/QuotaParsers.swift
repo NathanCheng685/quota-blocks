@@ -93,6 +93,35 @@ enum QuotaParsers {
         )
     }
 
+    /// The exact Claude plan from `/api/oauth/profile`, in the same order
+    /// Claude Code uses: the server's own display name (for a plan such as
+    /// "Pro 100"), then the Max rate-limit tier, then the organization type.
+    static func parseClaudeProfilePlan(_ data: Data) -> String? {
+        guard
+            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let organization = root["organization"] as? [String: Any]
+        else { return nil }
+
+        if let display = (organization["plan_display_name"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !display.isEmpty, display.count <= 40
+        {
+            return display.replacingOccurrences(of: #"^Claude\s+"#, with: "", options: .regularExpression)
+        }
+
+        let type = organization["organization_type"] as? String
+        let tier = organization["rate_limit_tier"] as? String
+        if type == nil || type == "claude_max" {
+            switch tier {
+            case "default_claude_max_5x": return QuotaPlan.displayName("max_5x")
+            case "default_claude_max_20x": return QuotaPlan.displayName("max_20x")
+            default: break
+            }
+        }
+        guard let type, type.hasPrefix("claude_") else { return nil }
+        return QuotaPlan.displayName(String(type.dropFirst("claude_".count)))
+    }
+
     /// Limit resets granted to the account. The server only fills these in
     /// for an eligible client; anything paused, spent or past its deadline is
     /// left out so the menu never offers a reset that cannot be used.
