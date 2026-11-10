@@ -56,6 +56,16 @@ enum QuotaSelfTest {
         try expect(launch?.label.hasPrefix("Claude Opus 5.5 launch") == true, "Reset label kept for the tooltip")
         let noDeadline = withResets.resetGrants.last
         try expect(noDeadline?.resetsLeft == 2 && noDeadline?.endsAt == nil, "Reset without a deadline is kept")
+        let sameDeadline = [
+            QuotaResetGrant(label: "Launch reset", resetsLeft: 1, endsAt: launchDeadline),
+            QuotaResetGrant(label: "Tenure reset", resetsLeft: 1, endsAt: launchDeadline),
+            QuotaResetGrant(label: "", resetsLeft: 2, endsAt: nil),
+        ]
+        let mergedGrants = QuotaResetGrant.mergedByDeadline(sameDeadline)
+        try expect(mergedGrants.count == 2, "Resets sharing a deadline become one row")
+        try expect(mergedGrants.first?.resetsLeft == 2, "Merged row adds up the resets left")
+        try expect(mergedGrants.first?.label == "Launch reset\nTenure reset", "Merged row keeps every grant name")
+        try expect(mergedGrants.last?.endsAt == nil && mergedGrants.last?.resetsLeft == 2, "A different deadline stays its own row")
         let ineligible = #"{"seven_day":{"utilization":5.0},"cedar_ember":{"eligible":false,"ineligible_reason":"surface","grants":[{"id":"x","resets_left":1}]}}"#
         let ineligibleSnapshot = try QuotaParsers.parseClaudeUsage(Data(ineligible.utf8))
         try expect(ineligibleSnapshot.resetGrants.isEmpty, "Ineligible client shows no resets")

@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let fable = snapshot.fable {
                 menu.addItem(windowItem(label: "Fable", window: fable))
             }
-            for grant in snapshot.resetGrants {
+            for grant in QuotaResetGrant.mergedByDeadline(snapshot.resetGrants) {
                 menu.addItem(resetGrantItem(grant))
             }
         case let .unavailable(failure):
@@ -179,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func resetGrantItem(_ grant: QuotaResetGrant) -> NSMenuItem {
         let deadline = grant.endsAt.map {
-            " · \(text("\(formatResetDate($0)) 前可用", "use by \(formatResetDate($0))"))"
+            " · \(text("\(formatGrantDeadline($0)) 前可用", "use by \(formatGrantDeadline($0))"))"
         } ?? ""
         let item = disabledItem(
             "  \(text("重置机会", "Limit reset")) · \(text("剩 \(grant.resetsLeft) 次", "\(grant.resetsLeft) left"))\(deadline)"
@@ -204,6 +204,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let formatter = DateFormatter()
         formatter.locale = language == .chinese ? Locale(identifier: "zh_CN") : Locale(identifier: "en_US")
         formatter.dateFormat = language == .chinese ? "M月d日 E HH:mm" : "EEE, MMM d, h:mm a"
+        return formatter.string(from: date)
+    }
+
+    /// A reset can stay usable for months, so its deadline names the year
+    /// whenever that is not the current one.
+    private func formatGrantDeadline(_ date: Date) -> String {
+        let calendar = Calendar.current
+        guard calendar.component(.year, from: date) != calendar.component(.year, from: Date()) else {
+            return formatResetDate(date)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = language == .chinese ? Locale(identifier: "zh_CN") : Locale(identifier: "en_US")
+        formatter.dateFormat = language == .chinese ? "yyyy年M月d日 E HH:mm" : "EEE, MMM d, yyyy, h:mm a"
         return formatter.string(from: date)
     }
 

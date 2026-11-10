@@ -65,6 +65,27 @@ struct QuotaResetGrant: Sendable, Equatable {
     let label: String
     let resetsLeft: Int
     let endsAt: Date?
+
+    /// Grants that share a deadline read as one menu row: their counts add up
+    /// and their names are kept, one per line, for the tooltip. Order follows
+    /// the first grant of each deadline.
+    static func mergedByDeadline(_ grants: [QuotaResetGrant]) -> [QuotaResetGrant] {
+        var merged: [QuotaResetGrant] = []
+        for grant in grants {
+            if let index = merged.firstIndex(where: { $0.endsAt == grant.endsAt }) {
+                let existing = merged[index]
+                let labels = [existing.label, grant.label].filter { !$0.isEmpty }
+                merged[index] = QuotaResetGrant(
+                    label: labels.joined(separator: "\n"),
+                    resetsLeft: existing.resetsLeft + grant.resetsLeft,
+                    endsAt: existing.endsAt
+                )
+            } else {
+                merged.append(grant)
+            }
+        }
+        return merged
+    }
 }
 
 struct QuotaSnapshot: Sendable, Equatable {
