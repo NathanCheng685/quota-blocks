@@ -43,7 +43,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
         button.title = ""
-        updateToolTip()
         contentView.autoresizingMask = [.width, .height]
         contentView.frame = button.bounds
         button.addSubview(contentView)
@@ -220,10 +219,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return formatter.string(from: date)
     }
 
-    private func updateToolTip() {
-        statusItem.button?.toolTip = text("ChatGPT 与 Claude 周额度", "ChatGPT and Claude weekly quotas")
-    }
-
     private var launchAtLoginTitle: String {
         if SMAppService.mainApp.status == .requiresApproval {
             return text("开机自动启动（需要系统允许）", "Launch at Login (approval required)")
@@ -288,7 +283,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleLanguage() {
         language = language == .chinese ? .english : .chinese
         UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
-        updateToolTip()
         rebuildMenu()
     }
 
